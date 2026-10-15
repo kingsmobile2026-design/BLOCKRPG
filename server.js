@@ -76,7 +76,7 @@ function spawnMonster(type) {
   const [x, z] = pickPos(type);
   const id = ++monsterSeq;
   const m = { id, type, x, z, hp: d.hp, mhp: d.hp, dead: false, rt: 0, face: 0, cd: 0, kx: 0, kz: 0,
-              home: [x, z], px: x, pz: z, t: Math.random() * 6, ver: 1, atk: 0, dmg: new Map() };
+              home: [x, z], px: x, pz: z, t: Math.random() * 6, ver: 1, atk: 0, dmg: new Map(), cast: null, skT: rnd(4, 8) };
   monsters.set(id, m);
   return m;
 }
@@ -84,7 +84,7 @@ function respawnMonster(m) {
   const d = MT[m.type];
   const [x, z] = pickPos(m.type);
   m.x = x; m.z = z; m.px = x; m.pz = z; m.home = [x, z];
-  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0;
+  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8);
   m.dmg.clear(); m.ver++;
 }
 function initMonsters() {
@@ -109,13 +109,14 @@ function applyPlayerHit(p, ws, id, dmg, kb) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
-  kb = Math.max(0, Math.min(14, Number(kb) || 0));
+  // 넉백 약화: 일반 몬스터 35%, 보스 20%만 적용
+  kb = Math.max(0, Math.min(14, Number(kb) || 0)) * (d.boss ? 0.2 : 0.35);
   m.hp -= dmg;
   m.dmg.set(p.id, (m.dmg.get(p.id) || 0) + dmg);
   if (kb > 0) { const dd = dist || 1; m.kx = dx / dd * kb; m.kz = dz / dd * kb; }
   m.ver++;
   if (m.hp <= 0) {
-    m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0;
+    m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0; m.cast = null;
     // 보상: 마지막 일격을 가한 사람 + 몬스터 체력의 2% 이상 피해를 준 접속자
     for (const [pid, dm] of m.dmg) {
       if (pid !== p.id && dm < m.mhp * 0.02) continue;
@@ -126,6 +127,114 @@ function applyPlayerHit(p, ws, id, dmg, kb) {
   }
 }
 const MAX_HIT_DMG = 500000;
+
+// ===== 보스 특수 패턴 (예고 → 지연 후 판정, 피해는 'mdmg' 로 피격자에게 전달) =====
+const BOSS_SK = {
+  kingslime: ['leap', 'slam'],
+  wolfalpha: ['charge', 'slam', 'leap'],
+  goblinking: ['slam', 'charge', 'nova'],
+  lich: ['meteor', 'nova', 'breath'],
+  frostgiant: ['slam', 'breath', 'nova'],
+  pharaoh: ['nova', 'breath', 'charge'],
+  hydra: ['breath', 'slam', 'meteor'],
+  balrog: ['slam', 'breath', 'meteor', 'charge'],
+  demonlord: ['slam', 'breath', 'meteor', 'charge', 'nova'],
+  dragon: ['breath', 'slam', 'meteor', 'leap'],
+  worldboss: ['slam', 'breath', 'meteor', 'charge', 'nova', 'leap']
+};
+function sendNear(x, z, obj, range = AOI_RADIUS + 60) {
+  const raw = JSON.stringify(obj);
+  for (const ws of wss.clients) {
+    const p = ws.player;
+    if (!p || ws.readyState !== WebSocket.OPEN) continue;
+    if (Math.hypot(p.x - x, p.z - z) > range) continue;
+    try { ws.send(raw); } catch {}
+  }
+}
+function bossHit(m, p, dmg, now) {
+  if ((p.invTill || 0) > now) return;          // 대쉬/무적 중이면 회피 성공
+  p.invTill = now + 400;
+  const w = wsById.get(p.id);
+  if (w && w.readyState === WebSocket.OPEN) { try { w.send(JSON.stringify({ type: 'mdmg', id: m.id, dmg, mt: m.type })); } catch {} }
+}
+const inCircle = (p, x, z, r) => Math.hypot(p.x - x, p.z - z) <= r + 0.6;
+function inCone(p, ox, oz, dir, len, half) {
+  const dx = p.x - ox, dz = p.z - oz, dist = Math.hypot(dx, dz);
+  if (dist > len + 0.6) return false;
+  if (dist < 1.5) return true;
+  let a = Math.atan2(dx, dz) - dir; a = Math.atan2(Math.sin(a), Math.cos(a));
+  return Math.abs(a) <= half;
+}
+function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 10); }
+function startBossCast(m, d, tgt, td) {
+  const list = BOSS_SK[m.type];
+  let pool = list.filter(k => td < 14 || (k !== 'slam' && k !== 'nova'));
+  if (!pool.length) pool = list;
+  const kind = pool[(Math.random() * pool.length) | 0];
+  const sc = d.sc || 1;
+  const dir = Math.atan2(tgt.x - m.x, tgt.z - m.z);
+  const c = { kind, stage: 'tele', t: 1, dir, mult: 1.5 };
+  const fx = { type: 'bfx', id: m.id, t: m.type, k: kind, bx: q2(m.x), bz: q2(m.z), a: q2(dir) };
+  if (kind === 'slam') { c.t = 1.0; c.r = 6 + sc * 2.2; c.mult = 1.5; fx.r = q2(c.r); }
+  else if (kind === 'nova') { c.t = 1.5; c.r = 12 + sc * 3; c.mult = 1.2; fx.r = q2(c.r); }
+  else if (kind === 'breath') { c.t = 1.2; c.len = 16 + sc * 5; c.half = 0.55; c.mult = 1.7; fx.len = q2(c.len); fx.hw = c.half; }
+  else if (kind === 'charge') { c.t = 0.9; c.len = 26 + sc * 2; c.hw = 2.5 + sc * 0.6; c.mult = 1.5; fx.len = q2(c.len); fx.hw = q2(c.hw); }
+  else if (kind === 'leap') { c.t = 0.9; c.r = 6 + sc * 1.6; c.mult = 1.6; c.tx = tgt.x; c.tz = tgt.z; fx.r = q2(c.r); fx.tx = q2(tgt.x); fx.tz = q2(tgt.z); }
+  else { // meteor: 플레이어 위치 + 무작위 낙하 지점
+    c.t = 1.6; c.r = 5; c.mult = 1.3;
+    const ag = d.ag || 40;
+    const pts = [];
+    for (const p of players.values()) { if (p.hp > 0 && pts.length < 5 && Math.hypot(p.x - m.x, p.z - m.z) < ag * 1.5) pts.push([q2(p.x), q2(p.z)]); }
+    for (let i = 0; i < 3; i++) { const a = rnd(0, 6.283), r = rnd(4, 22); pts.push([q2(m.x + Math.sin(a) * r), q2(m.z + Math.cos(a) * r)]); }
+    c.pts = pts; fx.r = c.r; fx.pts = pts;
+  }
+  fx.d = c.t;
+  m.cast = c; m.face = dir; m.ver++;
+  sendNear(m.x, m.z, fx);
+}
+// 반환값 true = 시전 중이라 일반 AI(이동/기본공격)를 건너뜀
+function bossSkillTick(m, d, dt, now, alive, tgt, td) {
+  if (!BOSS_SK[m.type]) return false;
+  const c = m.cast;
+  if (c) {
+    c.t -= dt;
+    if (c.stage === 'tele') {
+      if (c.t > 0) return true;
+      const dmg = Math.round(d.dmg * c.mult);
+      if (c.kind === 'charge') { c.stage = 'go'; c.t = 0.45; c.hit = new Set(); return true; }
+      m.atk = 1;
+      if (c.kind === 'slam' || c.kind === 'nova') {
+        for (const p of alive) if (inCircle(p, m.x, m.z, c.r)) bossHit(m, p, dmg, now);
+      } else if (c.kind === 'breath') {
+        for (const p of alive) if (inCone(p, m.x, m.z, c.dir, c.len, c.half)) bossHit(m, p, dmg, now);
+      } else if (c.kind === 'leap') {
+        if (inW(c.tx, c.tz) && Math.hypot(c.tx, c.tz) > VILLAGE_R + 2) { m.x = c.tx; m.z = c.tz; m.px = m.x; m.pz = m.z; }
+        for (const p of alive) if (inCircle(p, m.x, m.z, c.r)) bossHit(m, p, dmg, now);
+      } else if (c.kind === 'meteor') {
+        for (const pt of c.pts) for (const p of alive) if (inCircle(p, pt[0], pt[1], c.r)) bossHit(m, p, dmg, now);
+      }
+      m.cast = null; nextSkillTime(m); m.cd = Math.max(m.cd, 1.0); m.ver++;
+      return true;
+    }
+    // charge: 돌진 이동 중 경로상의 플레이어에게 1회씩 피해
+    const step = c.len / 0.45 * dt;
+    const nx = m.x + Math.sin(c.dir) * step, nz = m.z + Math.cos(c.dir) * step;
+    if (inW(nx, nz) && Math.hypot(nx, nz) > VILLAGE_R + 2) { m.x = nx; m.z = nz; } else c.t = 0;
+    const dmg = Math.round(d.dmg * c.mult);
+    for (const p of alive) {
+      if (c.hit.has(p.id)) continue;
+      if (Math.hypot(p.x - m.x, p.z - m.z) <= c.hw + 1.2 + (d.sc || 1) * 0.5) { c.hit.add(p.id); bossHit(m, p, dmg, now); }
+    }
+    if (c.t <= 0) { m.cast = null; nextSkillTime(m); m.cd = Math.max(m.cd, 1.0); }
+    m.ver++;
+    return true;
+  }
+  if (tgt) {
+    m.skT -= dt;
+    if (m.skT <= 0) { startBossCast(m, d, tgt, td); return true; }
+  }
+  return false;
+}
 
 // 몬스터 AI 1틱 (client index.html 의 기존 로직과 동일한 규칙)
 function tickMonsters(dt, now) {
@@ -148,7 +257,9 @@ function tickMonsters(dt, now) {
       if (dd < nearAny) nearAny = dd;
       if (dd < ag && dd < td && Math.hypot(m.x, m.z) > 17) { td = dd; tgt = p; }
     }
-    if (tgt) {
+    const casting = d.boss ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
+    if (casting) { /* 보스 특수 패턴 시전 중 */ }
+    else if (tgt) {
       const ex = tgt.x - m.x, ez = tgt.z - m.z;
       m.face = Math.atan2(ex, ez);
       if (td > reach) {
