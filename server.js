@@ -207,6 +207,7 @@ const BK = WORLD.BK;
 const BOSS_POS = Object.values(WORLD.BOSS);
 const ALLR = Object.values(ZONE_RECTS).flat();
 const AOI_RADIUS = 260;          // 이 거리 안의 몬스터 변화만 각 플레이어에게 전송
+const inSafe = (x, z) => (Math.abs(x) <= 26 && Math.abs(z) <= 26) || Math.hypot(x, z) <= 18; // 시작마을 전체(정사각형 ±24 + 여유) = 안전지대
 const VILLAGE_R = 18;            // 마을 반경 (몬스터 진입/공격 불가)
 
 // players / wsById 는 아래 WebSocket 섹션에서 채워집니다 (함수 안에서만 참조하므로 선언 순서 문제 없음)
@@ -245,7 +246,7 @@ function respawnMonster(m) {
   const d = MT[m.type];
   const [x, z] = pickPos(m.type);
   m.x = x; m.z = z; m.px = x; m.pz = z; m.home = [x, z];
-  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8);
+  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8); m._ret = null; m._lastTgtId = null; m._wbDone = false; m.shield = null; m.crystals = null; m.floor = null;
   m.dmg.clear(); m.ver++;
 }
 function initMonsters() {
@@ -264,25 +265,10 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
 const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400 };
+const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
-  const now = Date.now();
-  const secs = BOSS_CAP[m.type] || 40, perSec = m.mhp / secs;
-  dmg = Math.min(dmg, Math.max(1, Math.floor(perSec * 0.4)));           // 1회 타격 상한
-  if (!ws._bk) ws._bk = new Map();
-  let b = ws._bk.get(m.id);
-  if (!b) { b = { tk: perSec, t: now }; ws._bk.set(m.id, b); if (ws._bk.size > 20) ws._bk.delete(ws._bk.keys().next().value); }
-  b.tk = Math.min(perSec, b.tk + (now - b.t) / 1000 * perSec); b.t = now;
-  if (dmg > b.tk) dmg = Math.floor(b.tk);                                // 초당 상한(토큰 버킷)
-  if (m.type === 'worldboss') {
-    const g = m.gb || (m.gb = { tk: m.mhp * WB_TEAM_CAP, t: now }), gs = m.mhp * WB_TEAM_CAP;
-    g.tk = Math.min(gs, g.tk + (now - g.t) / 1000 * gs); g.t = now;
-    if (dmg > g.tk) dmg = Math.floor(g.tk);
-    if (dmg >= 1) g.tk -= dmg;
-  }
-  if (dmg >= 1) b.tk -= dmg;
-  if (dmg < 1 && now - (ws._capT || 0) > 1000) { ws._capT = now; try { ws.send(JSON.stringify({ type: 'bcap', id: m.id })); } catch {} }
-  return dmg;
+  return dmg;   // 보스 데미지 상한 제거 (타격당 최대치는 MAX_HIT_DMG 만 적용)
 }
 function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   // 크리스탈 타격 (부위 파괴)
@@ -294,10 +280,18 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     if (ci < 0) return;
     const c = m.crystals[ci];
     c.hp -= Math.max(1, Math.min(50000, Math.floor(dmg)));
+    if (m.shield && m.shield.crystal) {
+      m.shield.hp = m.crystals.reduce((a, x) => a + (x.dead ? 0 : Math.max(0, x.hp)), 0);
+      m.ver++;
+      sendNear(m.x, m.z, { type: 'shield_hit', id: m.id, hp: Math.ceil(m.shield.hp), mhp: m.shield.mhp });
+    }
     if (c.hp <= 0) {
       c.dead = true;
       sendNear(m.x, m.z, { type: 'cr_break', id: mid, i: ci });
-      if (m.crystals.every(x => x.dead)) {
+      if (m.shield && m.shield.crystal && m.crystals.every(x => x.dead)) {
+        m.shield = null; m.crystals = null; m.ver++;
+        sendNear(m.x, m.z, { type: 'shield_break', id: m.id });
+      } else if (m.crystals.every(x => x.dead)) {
         m.groggy = 4.5;
         m.cast = null;
         m.ver++;
@@ -314,6 +308,13 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
+  if (m.shield && m.shield.crystal) {   // 월드보스 수정 쉴드: 수정을 부숴야 함
+    if (Date.now() - (ws._shT || 0) > 800) {
+      ws._shT = Date.now();
+      try { ws.send(JSON.stringify({ type: 'shield_block', id: m.id, elem: 'all' })); } catch {}
+    }
+    return;
+  }
   // 원소 쉴드: 맞는 속성만 쉴드 파괴, 아니면 본체 피해 0
   if (d.boss && m.shield && m.shield.hp > 0) {
     const ok = elem && (elem === m.shield.elem || elem === 'all');
@@ -405,6 +406,7 @@ function sendNear(x, z, obj, range = AOI_RADIUS + 60) {
   }
 }
 function bossHit(m, p, dmg, now) {
+  if (inSafe(p.x, p.z)) return;                // 마을 안에서는 어떤 공격도 무효
   if ((p.invTill || 0) > now) return;          // 대쉬/무적 중이면 회피 성공
   p.invTill = now + 400;
   const w = wsById.get(p.id);
@@ -422,7 +424,8 @@ function inCone(p, ox, oz, dir, len, half) {
 function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 10); }
 
 // ===== 보스 쉴드 / 그로기 / 장판 기믹 =====
-const BOSS_SHIELD_ELEMS = { dragon:'fire', frostgiant:'ice', balrog:'fire', demonlord:'dark', worldboss:'all', lich:'dark', hydra:'poison', pharaoh:'fire' };
+const BOSS_SHIELD_ELEMS = { lich:'dark', frostgiant:'ice', pharaoh:'fire', hydra:'poison', balrog:'fire', demonlord:'dark', volcanolord:'fire' }; // 동굴(차원 입구) 지역 보스 + 화산 군주만
+const WB_CRYSTALS = 4, WB_CRYSTAL_HP = 100000, WB_SHIELD_REGEN = 0.005;   // 월드보스: 수정 4개(각 10만), 쉴드 중 초당 0.5% 회복
 const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', all:'만능 쉴드' };
 function maybeStartShield(m, d) {
   if (!d.boss || m.shield || (m.groggy && m.groggy > 0)) return;
@@ -437,16 +440,16 @@ function maybeStartShield(m, d) {
   m.ver++;
   sendNear(m.x, m.z, { type: 'shield_on', id: m.id, elem, hp: mhp, mhp, name: SHIELD_NAMES[elem] || '쉴드' });
 }
-function spawnCrystals(m, d) {
+function spawnCrystals(m, d, hpEach) {
   if (!d.boss) return;
   if (m.crystals && m.crystals.some(c => !c.dead)) return;
-  const n = m.type === 'worldboss' ? 4 : 3;
+  const n = m.type === 'worldboss' ? WB_CRYSTALS : 3;
   const sc = d.sc || 2;
   const list = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * 6.283 + rnd(-0.2, 0.2);
     const r = 5 + sc * 1.8 + rnd(0, 2);
-    list.push({ x: m.x + Math.sin(a) * r, z: m.z + Math.cos(a) * r, hp: Math.max(200, Math.floor(m.mhp * 0.008)), dead: false });
+    list.push({ x: m.x + Math.sin(a) * r, z: m.z + Math.cos(a) * r, hp: hpEach || Math.max(200, Math.floor(m.mhp * 0.008)), dead: false });
   }
   m.crystals = list;
   sendNear(m.x, m.z, { type: 'crystals', id: m.id, list: list.map(c => ({ x: q2(c.x), z: q2(c.z), hp: c.hp })) });
@@ -474,14 +477,25 @@ function tickBossGimmick(m, d, dt, now, alive) {
     if (m.groggy <= 0) { m.groggy = 0; m.crystals = null; sendNear(m.x, m.z, { type: 'groggy_end', id: m.id }); }
   }
   maybeStartShield(m, d);
-  // 브레스 등 강력한 시전 시작 시 크리스탈 스폰
-  if (m.cast && m.cast.stage === 'tele' && (m.cast.kind === 'breath' || m.cast.kind === 'meteor') && !m._crSpawned) {
-    m._crSpawned = true;
-    spawnCrystals(m, d);
+  // 월드보스: HP 50% 이하가 되면 (1회) 수정 4개 + 쉴드. 쉴드 중 초당 0.5% 회복, 공격 불가
+  if (m.type === 'worldboss') {
+    if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
+      m._wbDone = true;
+      m.cast = null; m.floor = null;
+      spawnCrystals(m, d, WB_CRYSTAL_HP);
+      const tot = WB_CRYSTALS * WB_CRYSTAL_HP;
+      m.shield = { elem: 'all', hp: tot, mhp: tot, crystal: true };
+      m.ver++;
+      sendNear(m.x, m.z, { type: 'shield_on', id: m.id, elem: 'all', hp: tot, mhp: tot, name: '수정 쉴드' });
+    }
+    if (m.shield && m.shield.crystal) {
+      m.hp = Math.min(m.mhp, m.hp + m.mhp * WB_SHIELD_REGEN * dt);
+      m.cast = null; m.floor = null;
+      m.ver++;
+    }
   }
-  if (!m.cast) m._crSpawned = false;
   // 장판: 주기적으로 월드보스/마왕
-  if ((m.type === 'worldboss' || m.type === 'demonlord' || m.type === 'balrog') && !m.floor) {
+  if ((m.type === 'worldboss' || m.type === 'demonlord' || m.type === 'balrog') && !m.floor && !(m.shield && m.shield.crystal)) {
     m._flT = (m._flT || rnd(8, 14)) - dt;
     if (m._flT <= 0) { m._flT = rnd(12, 20); startFloorPattern(m, d); }
   }
@@ -579,7 +593,7 @@ function bossSkillTick(m, d, dt, now, alive, tgt, td) {
 // 몬스터 AI 1틱 (client index.html 의 기존 로직과 동일한 규칙)
 function tickMonsters(dt, now) {
   const alive = [];
-  for (const p of players.values()) if (p.hp > 0 && Math.hypot(p.x, p.z) > VILLAGE_R) alive.push(p);
+  for (const p of players.values()) if (p.hp > 0 && !inSafe(p.x, p.z)) alive.push(p);
   for (const m of monsters.values()) {
     const d = MT[m.type]; if (!d) continue;
     if (m.dead) { m.rt -= dt; if (m.rt <= 0) respawnMonster(m); continue; }
@@ -612,11 +626,13 @@ function tickMonsters(dt, now) {
         if (dd < stickR && homeDist <= leash) { tgt = lp; td = dd; }
       }
     }
-    if (tgt) m._lastTgtId = tgt.id;
+    if (tgt) { m._lastTgtId = tgt.id; if (!m._ret) m._ret = [m.x, m.z]; }   // 어그로가 걸리기 전 위치 기억
     else if (nearAny > stickR || homeDist > leash) m._lastTgtId = null;
     if (d.boss) tickBossGimmick(m, d, dt, now, alive);
-    const casting = d.boss ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
+    const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
+    const casting = (d.boss && !wbLock) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
     if (casting) { /* 보스 특수 패턴 시전 중 */ }
+    else if (wbLock) { if (tgt) m.face = Math.atan2(tgt.x - m.x, tgt.z - m.z); }
     else if (tgt) {
       const ex = tgt.x - m.x, ez = tgt.z - m.z;
       m.face = Math.atan2(ex, ez);
@@ -631,9 +647,11 @@ function tickMonsters(dt, now) {
         if (w && w.readyState === WebSocket.OPEN) { try { w.send(JSON.stringify({ type: 'mdmg', id: m.id, dmg: d.dmg, mt: m.type })); } catch {} }
       }
     } else if (!m.kx && !m.kz) {
-      const hx = m.home[0] - m.x, hz = m.home[1] - m.z, hd = Math.hypot(hx, hz);
+      const rt = m._ret || m.home;
+      const hx = rt[0] - m.x, hz = rt[1] - m.z, hd = Math.hypot(hx, hz);
+      if (m._ret && hd <= 1.2) m._ret = null;   // 복귀 완료
       // 어그로 해제 시 홈 복귀만 (체력 리젠 없음)
-      const noAggro = nearAny > (d.boss ? ag * 2.5 : ag * 1.2);
+      const noAggro = true;   // 어그로가 풀리면 (근처에 플레이어가 있어도) 즉시 복귀
       if (d.boss) {
         if (noAggro && hd > 1) {
           m.x += hx / hd * 12 * dt; m.z += hz / hd * 12 * dt; m.face = Math.atan2(hx, hz);
@@ -1731,6 +1749,7 @@ wss.on('connection',ws=>{
       if(!targetPlayer||!targetPlayer.pvp) return;
       const dist=Math.hypot(targetPlayer.x-p.x, targetPlayer.z-p.z);
       if(dist>8) return;
+      if(inSafe(p.x,p.z)||inSafe(targetPlayer.x,targetPlayer.z)) return;
       const dmg=Math.max(1,Math.min(500,Math.floor(m.dmg)));
       targetPlayer.hp=Math.max(0,(targetPlayer.hp||100)-dmg);
       broadcastAll({type:'pvp_damage', from:p.id, to:targetPlayer.id, dmg, hp:targetPlayer.hp, name:p.name});
