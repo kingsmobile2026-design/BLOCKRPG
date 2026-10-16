@@ -18,22 +18,37 @@ const MAX_PLAYERS = 80;
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(s=>s.trim()).filter(Boolean));
 try { fs.mkdirSync(DATA_DIR, {recursive:true}); } catch {}
 
-// ===== MongoDB 저장소 (mongoose + IPv4) =====
-const mongoose = require('mongoose');
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kingsmobile2026_db_user:wROOGVZEqQ5CIKuM@cluster0.ux498h7.mongodb.net/blockrpg?retryWrites=true&w=majority';
+// ===== MongoDB 저장소 (MongoClient) =====
+const { MongoClient } = require('mongodb');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kingsmobile2026_db_user:a20140205g@cluster0.ux498h7.mongodb.net/';
 const MONGO_DB_NAME = process.env.MONGO_DB || 'blockrpg';
 const MONGO_DOC_ID = 'main';
+const mongoClient = new MongoClient(MONGO_URI, {
+  family: 4, // Render IPv6/SSL 이슈 완화
+  serverSelectionTimeoutMS: 20000
+});
 let mongoCol = null;
 let db = { users: {}, states: {}, guilds: {}, bans: {} };
 let _mongoReady = false;
 
+async function connectToMongoDB() {
+  await mongoClient.connect();
+  console.log('You successfully connected to MongoDB!');
+  return mongoClient;
+}
+
+async function disconnectFromMongoDB() {
+  try { await mongoClient.close(); } catch {}
+}
+
 async function connectMongo() {
-  await mongoose.connect(MONGO_URI, {
-    family: 4, // Render SSL/IPv6 충돌 방지
-    serverSelectionTimeoutMS: 20000
-  });
-  console.log('✅ MongoDB 연결 성공!');
-  const mdb = mongoose.connection.db;
+  try {
+    await connectToMongoDB();
+  } catch (err) {
+    console.dir(err);
+    throw err;
+  }
+  const mdb = mongoClient.db(MONGO_DB_NAME);
   mongoCol = mdb.collection('accounts');
   const doc = await mongoCol.findOne({ _id: MONGO_DOC_ID });
   if (doc) {
@@ -1691,11 +1706,11 @@ setInterval(()=>{
 
 setInterval(()=>{ try{ for(const pt of parties.values()) pushParty(pt); }catch(e){ console.error('party tick error:',e); } },1000);
 process.on('SIGTERM', () => {
-  const done = () => { if (server) server.close(() => process.exit(0)); else process.exit(0); };
+  const done = () => { disconnectFromMongoDB().finally(() => { if (server) server.close(() => process.exit(0)); else process.exit(0); }); };
   persist().then(done).catch(done);
 });
 process.on('SIGINT', () => {
-  const done = () => { if (server) server.close(() => process.exit(0)); else process.exit(0); };
+  const done = () => { disconnectFromMongoDB().finally(() => { if (server) server.close(() => process.exit(0)); else process.exit(0); }); };
   persist().then(done).catch(done);
 });
 
