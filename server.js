@@ -131,7 +131,7 @@ const MT = WORLD.MT;
 
 // 신규 몬스터 스탯
 Object.assign(WORLD.MT, {
-  shadowwolf:{hp:800,dmg:95,xp:200,g:70,sp:9.5,reach:2.5,rt:10,sc:1.15,n:6,nm:'그림자 늑대'},
+  shadowwolf:{hp:800,dmg:95,xp:200,g:70,sp:9.5,reach:2.5,rt:10,sc:1.15,n:10,nm:'그림자 늑대'},
   stonegolem:{hp:2500,dmg:140,xp:400,g:140,sp:3.2,reach:4.2,rt:16,sc:2.2,n:6,ag:22,cd:1.9,nm:'석상 골렘'},
   fireimp:{hp:1100,dmg:160,xp:280,g:90,sp:8.5,reach:2.3,rt:11,sc:1.0,n:10,nm:'화염 임프'},
   icewraith:{hp:1400,dmg:130,xp:320,g:110,sp:7,reach:2.5,rt:12,sc:1.1,n:8,nm:'얼음 망령'},
@@ -140,7 +140,6 @@ Object.assign(WORLD.MT, {
 });
 
 Object.assign(WORLD.ZT, {
-  // 그림자 늑대는 초보 평원이 아니라 암흑 지대 (검은색·고스펙)
   shadowwolf:'dark', stonegolem:'golem', fireimp:'hell',
   icewraith:'snow', swampbeast:'swamp', voidcultist:'dark'
 });
@@ -777,41 +776,8 @@ app.post('/api/login',authLimiter,(req,res)=>{
  res.json({user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,token});
 });
 app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);res.json({user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,token});});
-function mergeAdminProtected(key, state){
-  const prev = db.states[key] && db.states[key].player;
-  if(!prev || !state || !state.player) return state;
-  const lockAt = prev._adminLockAt || 0;
-  if(Date.now() - lockAt < 120000){
-    const pl = state.player;
-    if(Number.isFinite(prev._adminLockLv) && (pl.lv|0) < (prev._adminLockLv|0)){
-      pl.lv = prev.lv; pl.xp = prev.xp; pl.nx = prev.nx;
-      pl.mhp = Math.max(pl.mhp||0, prev.mhp||0);
-      pl.hp = Math.min(pl.mhp, Math.max(pl.hp||0, prev.hp||0));
-    }
-    pl._adminLockAt = prev._adminLockAt;
-    pl._adminLockLv = prev._adminLockLv;
-    if(prev._adminLockCoinAt && Date.now() - prev._adminLockCoinAt < 120000){
-      if((pl.coin|0) < (prev.coin|0)) pl.coin = prev.coin;
-      pl._adminLockCoinAt = prev._adminLockCoinAt;
-    }
-  }
-  return state;
-}
-app.post('/api/save',requireUser,(req,res)=>{
-  const state=cleanState(req.body&&req.body.state);
-  if(!state)return res.status(400).json({error:'저장 데이터 형식이 올바르지 않습니다.'});
-  const merged=mergeAdminProtected(req.userKey, state);
-  db.states[req.userKey]=merged; persistSoon();
-  res.json({ok:true,savedAt:merged.savedAt, lv:merged.player&&merged.player.lv, coin:merged.player&&merged.player.coin});
-});
-app.post('/api/save-beacon',(req,res)=>{
-  const key=userFromReq(req);if(!key)return res.status(401).end();
-  let body=req.body;
-  if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}
-  const state=cleanState(body&&body.state);if(!state)return res.status(400).end();
-  db.states[key]=mergeAdminProtected(key, state); persistSoon();
-  res.status(204).end();
-});
+app.post('/api/save',requireUser,(req,res)=>{const state=cleanState(req.body&&req.body.state);if(!state)return res.status(400).json({error:'저장 데이터 형식이 올바르지 않습니다.'});db.states[req.userKey]=state;persistSoon();res.json({ok:true,savedAt:state.savedAt});});
+app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();db.states[key]=state;persistSoon();res.status(204).end();});
 app.post('/api/logout',(req,res)=>{clearCookie(req,res);res.json({ok:true});});
 
 app.post('/api/buy', requireUser, (req, res) => {
@@ -944,16 +910,15 @@ app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
   const p=ensurePlayer(key);
   p.lv=lv;
   p.xp=0;
-  p.nx=Math.max(30, Math.floor(30*Math.pow(1.15, Math.max(0, lv-1))));
+  p.nx=Math.max(30, Math.floor(30*Math.pow(1.15, lv-1)));
+  // 체력도 대략 맞춤
   const base=100;
   p.mhp=Math.max(p.mhp||base, base + (lv-1)*15);
   p.hp=p.mhp;
-  p._adminLockAt = Date.now();
-  p._adminLockLv = lv;
   db.states[key].savedAt=Date.now();
   try{persist();}catch(e){}
   pushAdminStat(key, {lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin});
-  res.json({ok:true, username:db.users[key].username, lv:p.lv, xp:p.xp, nx:p.nx, coin:p.coin, mhp:p.mhp, hp:p.hp});
+  res.json({ok:true, username:db.users[key].username, lv:p.lv, coin:p.coin, mhp:p.mhp});
 });
 app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
   const {username, amount} = req.body||{};
@@ -1362,14 +1327,23 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.rcoin = (p.rcoin|0) + (10 + p.rebirth * 5);
   p.title = REBIRTH_TITLES[Math.min(REBIRTH_TITLES.length-1, p.rebirth)] || '환생자';
   p.lv = 1; p.xp = 0; p.nx = 30;
-  p.mhp = 100 + (p.ae?0:0); // base; client recalcs with armor/enhance
+  // 환생 시 코인·장비 초기화 (특성/룬/환생코인/강화재료(items)는 유지)
+  p.coin = 0;
+  p.w = 0; p.a = 0;
+  p.ow = [0]; p.oa = [0];
+  p.we = 0; p.ae = 0;
+  p.pot = [2, 0, 0, 0];
+  p.mhp = 100;
   p.hp = p.mhp;
-  // 특성 포인트 보너스
   p.talentPts = expectedTalentPts(p);
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); } catch(e) {}
   pushAdminStat(req.userKey, { lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin });
-  res.json({ ok:true, rebirth:p.rebirth, rcoin:p.rcoin, title:p.title, lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts });
+  res.json({
+    ok:true, rebirth:p.rebirth, rcoin:p.rcoin, title:p.title,
+    lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts,
+    coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
+  });
 });
 
 app.post('/api/talent', requireUser, (req, res) => {
