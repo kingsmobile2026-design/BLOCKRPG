@@ -13,12 +13,82 @@ app.set('trust proxy', 1);
 const PORT = Number(process.env.PORT) || 10000;
 const HOST = '0.0.0.0';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const DB_FILE = path.join(DATA_DIR, 'accounts.json');
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 const MAX_PLAYERS = 80;
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(s=>s.trim()).filter(Boolean));
-fs.mkdirSync(DATA_DIR, {recursive:true});
-// ★ 세션 서명 키: 환경변수가 없으면 DATA_DIR/session.key 파일에 저장해서 서버가 재시작/슬립해도 로그인이 풀리지 않게 한다.
+try { fs.mkdirSync(DATA_DIR, {recursive:true}); } catch {}
+
+// ===== MongoDB 저장소 =====
+const { MongoClient } = require('mongodb');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://kingsmobile2026_db_user:wRO0GVZEqQSCIKuM@ac-tv5mb6c-shard-00-00.ux498h7.mongodb.net:27017,ac-tv5mb6c-shard-00-01.ux498h7.mongodb.net:27017,ac-tv5mb6c-shard-00-02.ux498h7.mongodb.net:27017/?ssl=true&replicaSet=atlas-d6apbx-shard-0&authSource=admin';
+const MONGO_DB_NAME = process.env.MONGO_DB || 'blockrpg';
+const MONGO_DOC_ID = 'main';
+let mongoClient = null;
+let mongoCol = null;
+let db = { users: {}, states: {}, guilds: {}, bans: {} };
+let _mongoReady = false;
+
+async function connectMongo() {
+  mongoClient = new MongoClient(MONGO_URI, {
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000
+  });
+  await mongoClient.connect();
+  const mdb = mongoClient.db(MONGO_DB_NAME);
+  mongoCol = mdb.collection('accounts');
+  await mongoCol.createIndex({ _id: 1 });
+  const doc = await mongoCol.findOne({ _id: MONGO_DOC_ID });
+  if (doc) {
+    db.users = doc.users && typeof doc.users === 'object' ? doc.users : {};
+    db.states = doc.states && typeof doc.states === 'object' ? doc.states : {};
+    db.guilds = doc.guilds && typeof doc.guilds === 'object' ? doc.guilds : {};
+    db.bans = doc.bans && typeof doc.bans === 'object' ? doc.bans : {};
+    console.log('MongoDB loaded: users=%d states=%d guilds=%d', Object.keys(db.users).length, Object.keys(db.states).length, Object.keys(db.guilds).length);
+  } else {
+    // 최초 기동: 로컬 accounts.json 이 있으면 1회 마이그레이션
+    try {
+      const legacy = path.join(DATA_DIR, 'accounts.json');
+      const parsed = JSON.parse(fs.readFileSync(legacy, 'utf8'));
+      if (parsed && parsed.users) {
+        db.users = parsed.users || {};
+        db.states = parsed.states || {};
+        db.guilds = parsed.guilds || {};
+        db.bans = parsed.bans || {};
+        console.log('Migrated local accounts.json -> MongoDB');
+      }
+    } catch {}
+    await persist();
+    console.log('MongoDB: created empty accounts document');
+  }
+  if (!db.guilds || typeof db.guilds !== 'object') db.guilds = {};
+  if (!db.bans || typeof db.bans !== 'object') db.bans = {};
+  _mongoReady = true;
+}
+
+function persist() {
+  if (!mongoCol) return Promise.reject(new Error('MongoDB not connected'));
+  return mongoCol.updateOne(
+    { _id: MONGO_DOC_ID },
+    { $set: { users: db.users, states: db.states, guilds: db.guilds, bans: db.bans, updatedAt: new Date() } },
+    { upsert: true }
+  ).catch(e => {
+    console.error('persist failed:', e.message);
+    throw e;
+  });
+}
+
+// 저장 요청이 몰려도 1.5초에 한 번만 MongoDB 에 쓴다
+let _persistT = null;
+function persistSoon() {
+  if (_persistT) return;
+  _persistT = setTimeout(() => {
+    _persistT = null;
+    persist().catch(e => console.error('persist failed:', e.message));
+  }, 1500);
+}
+
+// ★ 세션 서명 키: 환경변수 우선, 없으면 DATA_DIR/session.key
 const SECRET_FILE = path.join(DATA_DIR, 'session.key');
 let SESSION_SECRET = process.env.SESSION_SECRET || '';
 if (!SESSION_SECRET) {
@@ -26,17 +96,9 @@ if (!SESSION_SECRET) {
   if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
     SESSION_SECRET = crypto.randomBytes(48).toString('hex');
     try { fs.writeFileSync(SECRET_FILE, SESSION_SECRET, { mode: 0o600 }); }
-    catch (e) { console.error('세션 키를 저장하지 못했습니다(서버 재시작 시 전원 로그아웃됨). SESSION_SECRET 환경변수를 설정하세요:', e.message); }
+    catch (e) { console.error('세션 키를 저장하지 못했습니다. SESSION_SECRET 환경변수를 설정하세요:', e.message); }
   }
 }
-let db={users:{},states:{},guilds:{},bans:{}};
-try { const parsed=JSON.parse(fs.readFileSync(DB_FILE,'utf8')); if(parsed&&parsed.users&&parsed.states)db=parsed; } catch(e) { if(e.code!=='ENOENT') console.error('Account store could not be read:',e.message); }
-if(!db.guilds||typeof db.guilds!=='object')db.guilds={};
-if(!db.bans||typeof db.bans!=='object')db.bans={};
-function persist(){const tmp=DB_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify(db));fs.renameSync(tmp,DB_FILE);}
-// 저장 요청이 몰려도 1.5초에 한 번만 디스크에 쓴다 (80명이 5초마다 저장해도 안전)
-let _persistT=null;
-function persistSoon(){if(_persistT)return;_persistT=setTimeout(()=>{_persistT=null;try{persist();}catch(e){console.error('persist failed:',e.message);}},1500);}
 const appLimiter=rateLimit({windowMs:60000,limit:300,standardHeaders:'draft-7',legacyHeaders:false});
 const authLimiter=rateLimit({windowMs:15*60*1000,limit:12,standardHeaders:'draft-7',legacyHeaders:false,message:{error:'로그인/가입 시도가 너무 많습니다. 잠시 후 다시 시도하세요.'}});
 
@@ -578,8 +640,8 @@ function userFromReq(req){
 function requireUser(req,res,next){const u=userFromReq(req);if(!u)return res.status(401).json({error:'로그인이 필요합니다.'});req.userKey=u;next();}
 function publicName(key){return db.users[key].username;}
 
-// ===== 관리자 계정 시드 (ADMIN) =====
-(function seedAdmin(){
+// ===== 관리자 계정 시드 (ADMIN) — Mongo 연결 후 seedAdmin() 호출 =====
+function seedAdmin(){
   const key = usernameKey('ADMIN');
   if(!db.users[key]){
     const salt = crypto.randomBytes(16).toString('hex');
@@ -593,13 +655,15 @@ function publicName(key){return db.users[key].username;}
       banned: false
     };
     db.states[key] = null;
-    try { persist(); console.log('Admin account seeded: ADMIN'); } catch(e) {}
+    console.log('Admin account seeded: ADMIN');
+    return persist().catch(e => console.error('seed persist', e.message));
   } else {
     db.users[key].isAdmin = true;
     db.users[key].banned = !!db.users[key].banned;
   }
   if(!db.bans) db.bans = {};
-})();
+  return Promise.resolve();
+}
 
 function ensurePlayer(key){
   if(!db.states[key] || !db.states[key].player){
@@ -1434,8 +1498,8 @@ app.get('/healthz',(_req,res)=>res.json({ok:true, monsters:monsters.size}));
 app.use(express.static(path.join(__dirname,'public'),{index:'index.html',dotfiles:'deny',maxAge:'1h',setHeaders(res,p){if(p.endsWith('.html'))res.setHeader('Cache-Control','no-cache');res.setHeader('X-Content-Type-Options','nosniff');}}));
 app.use((err,_req,res,_next)=>{if(res.headersSent)return;res.status(400).json({error:'요청을 처리할 수 없습니다.'});});
 
-const server=app.listen(PORT,HOST,()=>console.log(`RPG server listening on ${HOST}:${PORT}; data=${DB_FILE}`));
 const wss=new WebSocketServer({noServer:true,maxPayload:8192,perMessageDeflate:false});
+let server = null;
 const players=new Map(), socketsByIp=new Map(), wsById=new Map();
 
 function allowedOrigin(origin,req){if(!origin)return false;if(ALLOWED_ORIGINS.has(origin))return true;try{const u=new URL(origin),secure=String(req.headers['x-forwarded-proto']||'').split(',')[0].trim()==='https';return u.host===req.headers.host&&u.protocol===(secure?'https:':'http:');}catch{return false;}}
@@ -1450,7 +1514,7 @@ function userFromWsReq(req){
   return key?{ key, username: db.users[key].username }:null;
 }
 
-server.on('upgrade',(req,socket,head)=>{
+function attachUpgrade(server){server.on('upgrade',(req,socket,head)=>{
   let pathname; try{pathname=new URL(req.url,'http://localhost').pathname;}catch{socket.destroy();return;}
   if(pathname!=='/ws'||!allowedOrigin(req.headers.origin,req)){socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');socket.destroy();return;}
   const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'').split(',')[0].trim();
@@ -1468,6 +1532,7 @@ server.on('upgrade',(req,socket,head)=>{
     wss.emit('connection',ws,req);
   });
 });
+}
 
 wss.on('connection',ws=>{
   ws.isAlive=true; ws.last=0;
@@ -1629,6 +1694,26 @@ setInterval(()=>{
 },100);
 
 setInterval(()=>{ try{ for(const pt of parties.values()) pushParty(pt); }catch(e){ console.error('party tick error:',e); } },1000);
-server.on('close',()=>{for(const ws of wss.clients)ws.terminate();});
-process.on('SIGTERM',()=>{try{persist();}catch{}server.close(()=>process.exit(0));});
-process.on('SIGINT',()=>{try{persist();}catch{}server.close(()=>process.exit(0));});
+process.on('SIGTERM', () => {
+  const done = () => { if (server) server.close(() => process.exit(0)); else process.exit(0); };
+  persist().then(done).catch(done);
+});
+process.on('SIGINT', () => {
+  const done = () => { if (server) server.close(() => process.exit(0)); else process.exit(0); };
+  persist().then(done).catch(done);
+});
+
+(async () => {
+  try {
+    await connectMongo();
+  } catch (e) {
+    console.error('MongoDB connection failed:', e.message);
+    process.exit(1);
+  }
+  try { await seedAdmin(); } catch (e) { console.error('seedAdmin', e.message); }
+  server = app.listen(PORT, HOST, () => {
+    console.log(`RPG server listening on ${HOST}:${PORT}; mongo=${MONGO_DB_NAME}`);
+  });
+  server.on('close', () => { for (const ws of wss.clients) ws.terminate(); });
+  attachUpgrade(server);
+})();
