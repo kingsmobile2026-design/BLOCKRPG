@@ -18,26 +18,23 @@ const MAX_PLAYERS = 80;
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS || '').split(',').map(s=>s.trim()).filter(Boolean));
 try { fs.mkdirSync(DATA_DIR, {recursive:true}); } catch {}
 
-// ===== MongoDB 저장소 =====
-const { MongoClient } = require('mongodb');
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://kingsmobile2026_db_user:wRO0GVZEqQSCIKuM@ac-tv5mb6c-shard-00-00.ux498h7.mongodb.net:27017,ac-tv5mb6c-shard-00-01.ux498h7.mongodb.net:27017,ac-tv5mb6c-shard-00-02.ux498h7.mongodb.net:27017/?ssl=true&replicaSet=atlas-d6apbx-shard-0&authSource=admin';
+// ===== MongoDB 저장소 (mongoose + IPv4) =====
+const mongoose = require('mongoose');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kingsmobile2026_db_user:wROOGVZEqQ5CIKuM@cluster0.ux498h7.mongodb.net/blockrpg?retryWrites=true&w=majority';
 const MONGO_DB_NAME = process.env.MONGO_DB || 'blockrpg';
 const MONGO_DOC_ID = 'main';
-let mongoClient = null;
 let mongoCol = null;
 let db = { users: {}, states: {}, guilds: {}, bans: {} };
 let _mongoReady = false;
 
 async function connectMongo() {
-  mongoClient = new MongoClient(MONGO_URI, {
-    maxPoolSize: 10,
-    serverSelectionTimeoutMS: 15000,
-    connectTimeoutMS: 15000
+  await mongoose.connect(MONGO_URI, {
+    family: 4, // Render SSL/IPv6 충돌 방지
+    serverSelectionTimeoutMS: 20000
   });
-  await mongoClient.connect();
-  const mdb = mongoClient.db(MONGO_DB_NAME);
+  console.log('✅ MongoDB 연결 성공!');
+  const mdb = mongoose.connection.db;
   mongoCol = mdb.collection('accounts');
-  await mongoCol.createIndex({ _id: 1 });
   const doc = await mongoCol.findOne({ _id: MONGO_DOC_ID });
   if (doc) {
     db.users = doc.users && typeof doc.users === 'object' ? doc.users : {};
@@ -46,7 +43,6 @@ async function connectMongo() {
     db.bans = doc.bans && typeof doc.bans === 'object' ? doc.bans : {};
     console.log('MongoDB loaded: users=%d states=%d guilds=%d', Object.keys(db.users).length, Object.keys(db.states).length, Object.keys(db.guilds).length);
   } else {
-    // 최초 기동: 로컬 accounts.json 이 있으면 1회 마이그레이션
     try {
       const legacy = path.join(DATA_DIR, 'accounts.json');
       const parsed = JSON.parse(fs.readFileSync(legacy, 'utf8'));
