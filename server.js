@@ -28,7 +28,7 @@ const mongoClient = new MongoClient(MONGO_URI, {
   serverSelectionTimeoutMS: 20000
 });
 let mongoCol = null;
-let db = { users: {}, states: {}, guilds: {}, bans: {} };
+let db = { users: {}, states: {}, guilds: {}, bans: {}, mapOverrides: { version:1, objects:[], equipment:{} } };
 let _mongoReady = false;
 
 async function connectToMongoDB() {
@@ -56,7 +56,8 @@ async function connectMongo() {
     db.states = doc.states && typeof doc.states === 'object' ? doc.states : {};
     db.guilds = doc.guilds && typeof doc.guilds === 'object' ? doc.guilds : {};
     db.bans = doc.bans && typeof doc.bans === 'object' ? doc.bans : {};
-    console.log('MongoDB loaded: users=%d states=%d guilds=%d', Object.keys(db.users).length, Object.keys(db.states).length, Object.keys(db.guilds).length);
+    db.mapOverrides = doc.mapOverrides && typeof doc.mapOverrides === 'object' ? doc.mapOverrides : { version:1, objects:[], equipment:{} };
+    console.log('MongoDB loaded: users=%d states=%d guilds=%d overrides=%d equip=%d', Object.keys(db.users).length, Object.keys(db.states).length, Object.keys(db.guilds).length, (db.mapOverrides.objects||[]).length, Object.keys(db.mapOverrides.equipment||{}).length);
   } else {
     try {
       const legacy = path.join(DATA_DIR, 'accounts.json');
@@ -74,6 +75,9 @@ async function connectMongo() {
   }
   if (!db.guilds || typeof db.guilds !== 'object') db.guilds = {};
   if (!db.bans || typeof db.bans !== 'object') db.bans = {};
+  if (!db.mapOverrides || typeof db.mapOverrides !== 'object') db.mapOverrides = { version:1, objects:[], equipment:{} };
+  if (!Array.isArray(db.mapOverrides.objects)) db.mapOverrides.objects = [];
+  if (!db.mapOverrides.equipment || typeof db.mapOverrides.equipment !== 'object') db.mapOverrides.equipment = {};
   _mongoReady = true;
 }
 
@@ -81,7 +85,7 @@ function persist() {
   if (!mongoCol) return Promise.reject(new Error('MongoDB not connected'));
   return mongoCol.updateOne(
     { _id: MONGO_DOC_ID },
-    { $set: { users: db.users, states: db.states, guilds: db.guilds, bans: db.bans, updatedAt: new Date() } },
+    { $set: { users: db.users, states: db.states, guilds: db.guilds, bans: db.bans, mapOverrides: db.mapOverrides, updatedAt: new Date() } },
     { upsert: true }
   ).catch(e => {
     console.error('persist failed:', e.message);
@@ -1062,6 +1066,83 @@ app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
   pushAdminStat(key, {coin:p.coin, lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp});
   res.json({ok:true, username:db.users[key].username, coin:p.coin});
 });
+
+// ===== 관리자 맵/장비 모델 오버라이드 =====
+function cleanXform(o) {
+  const x=Number(o.x), y=Number(o.y), z=Number(o.z);
+  const rx=Number(o.rx)||0, ry=Number(o.ry)||0, rz=Number(o.rz)||0;
+  const sx=Number(o.sx), sy=Number(o.sy), sz=Number(o.sz);
+  if (![x,y,z].every(Number.isFinite)) return null;
+  return {
+    x: Math.round(x*1000)/1000, y: Math.round(y*1000)/1000, z: Math.round(z*1000)/1000,
+    rx: Math.round(rx*1000)/1000, ry: Math.round(ry*1000)/1000, rz: Math.round(rz*1000)/1000,
+    sx: Number.isFinite(sx) ? Math.min(12, Math.max(0.05, Math.round(sx*1000)/1000)) : 1,
+    sy: Number.isFinite(sy) ? Math.min(12, Math.max(0.05, Math.round(sy*1000)/1000)) : 1,
+    sz: Number.isFinite(sz) ? Math.min(12, Math.max(0.05, Math.round(sz*1000)/1000)) : 1
+  };
+}
+app.get('/api/admin/map-overrides', requireAdmin, (req, res) => {
+  const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, updatedAt: mo.updatedAt||null });
+});
+app.get('/api/map-overrides', (req, res) => {
+  const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{} });
+});
+app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
+  const body = req.body || {};
+  const objects = Array.isArray(body.objects) ? body.objects : null;
+  const equipment = body.equipment && typeof body.equipment === 'object' ? body.equipment : null;
+  if (objects === null && equipment === null) return res.status(400).json({ error: 'objects 또는 equipment 가 필요합니다.' });
+
+  const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
+  if (objects) {
+    if (objects.length > 500) return res.status(400).json({ error: '맵 오브젝트는 최대 500개입니다.' });
+    const cleaned = [];
+    for (const o of objects) {
+      if (!o || typeof o !== 'object') continue;
+      const id = String(o.id||'').slice(0, 64);
+      const kind = String(o.kind||'prop').slice(0, 32);
+      if (!id || kind === 'equip') continue;
+      const xf = cleanXform(o); if (!xf) continue;
+      if (Math.abs(xf.x)>2000 || Math.abs(xf.z)>3000 || xf.y<-5 || xf.y>80) continue;
+      cleaned.push({
+        id, kind, label: typeof o.label==='string'?o.label.slice(0,48):'',
+        ...xf, visible: o.visible===false?false:true,
+        meta: o.meta && typeof o.meta==='object' ? o.meta : undefined
+      });
+    }
+    mo.objects = cleaned;
+  }
+  if (equipment) {
+    const eq = {};
+    for (const [k, v] of Object.entries(equipment)) {
+      const key = String(k).slice(0, 32);
+      if (!/^[wa]:\d+$/.test(key)) continue;
+      if (!v || typeof v !== 'object') continue;
+      const xf = cleanXform(v); if (!xf) continue;
+      eq[key] = xf;
+    }
+    mo.equipment = eq;
+  }
+  mo.version = (mo.version|0) + 1;
+  mo.updatedAt = Date.now();
+  mo.by = req.userKey;
+  db.mapOverrides = mo;
+  try {
+    persist();
+    try {
+      const payload = JSON.stringify({ type:'map_overrides', version: mo.version, objects: mo.objects||[], equipment: mo.equipment||{} });
+      for (const ws of wss.clients) {
+        if (ws.readyState === WebSocket.OPEN) try { ws.send(payload); } catch {}
+      }
+    } catch {}
+    res.json({ ok:true, version: mo.version, count: (mo.objects||[]).length, equipCount: Object.keys(mo.equipment||{}).length });
+  } catch (e) {
+    res.status(500).json({ error: '저장 실패: '+(e.message||'') });
+  }
+});
+
 
 // ===================================================================================
 //  통계 / 파티 / 길드 / 리더보드  (모두 서버 권한 — 클라이언트는 요청만 보냄)
