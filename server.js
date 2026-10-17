@@ -80,6 +80,8 @@ async function connectMongo() {
   if (!db.mapOverrides.equipment || typeof db.mapOverrides.equipment !== 'object') db.mapOverrides.equipment = {};
   if (!db.mapOverrides.models || typeof db.mapOverrides.models !== 'object') db.mapOverrides.models = {};
   if (!Array.isArray(db.mapOverrides.sandbox)) db.mapOverrides.sandbox = [];
+  if (!db.mapOverrides.spawns || typeof db.mapOverrides.spawns !== 'object') db.mapOverrides.spawns = {};
+  try { applySpawns(db.mapOverrides.spawns); } catch (e) { console.log('applySpawns:', e.message); }
   _mongoReady = true;
 }
 
@@ -714,6 +716,7 @@ app.use(helmet({
   referrerPolicy:{policy:'no-referrer'}
 }));
 app.use(appLimiter);
+app.use('/api/admin/map-overrides', express.json({limit:'4mb',strict:true}));
 app.use(express.json({limit:'32kb',strict:true}));
 app.use(express.text({type:'text/plain',limit:'32kb'}));
 function safeEqual(a,b){const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&crypto.timingSafeEqual(aa,bb);}
@@ -1084,6 +1087,15 @@ function cleanXform(o) {
   };
 }
 function _n(v, def, lo, hi) { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v*1000)/1000)) : def; }
+function bossList() { const o = {}; for (const [t, d] of Object.entries(MT)) if (d.fix) o[t] = { x: d.fix[0], z: d.fix[1], nm: d.nm || t }; return o; }
+function applySpawns(sp) {
+  for (const [t, v] of Object.entries(sp || {})) {
+    const d = MT[t]; if (!d || !d.fix || !Array.isArray(v)) continue;
+    d.fix = [v[0], v[1]]; if (WORLD.BOSS[t]) WORLD.BOSS[t] = [v[0], v[1]];
+    for (const m of monsters.values()) { if (m.type !== t) continue; m.x = m.px = v[0]; m.z = m.pz = v[1]; m.home = [v[0], v[1]]; m.kx = m.kz = 0; m.ver++; }
+  }
+  BOSS_POS.length = 0; BOSS_POS.push(...Object.values(WORLD.BOSS));
+}
 function cleanPart(p) {
   if (!p || typeof p !== 'object') return null;
   return {
@@ -1096,13 +1108,13 @@ function cleanPart(p) {
 }
 app.get('/api/admin/map-overrides', requireAdmin, (req, res) => {
   const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
-  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[], updatedAt: mo.updatedAt||null });
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[], mapEdits: mo.mapEdits||[], bosses: bossList(), updatedAt: mo.updatedAt||null });
 });
 app.get('/api/map-overrides', (req, res) => {
   const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
-  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[] });
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[], mapEdits: mo.mapEdits||[], bosses: bossList() });
 });
-app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
+app.post('/api/admin/map-overrides', requireAdmin, async (req, res) => {
   const body = req.body || {};
   const objects = Array.isArray(body.objects) ? body.objects : null;
   const equipment = body.equipment && typeof body.equipment === 'object' ? body.equipment : null;
@@ -1148,6 +1160,25 @@ app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
     }
     mo.models = out;
   }
+  const mapEdits = Array.isArray(body.mapEdits) ? body.mapEdits : null;
+  const spawns = body.spawns && typeof body.spawns === 'object' ? body.spawns : null;
+  if (mapEdits) {
+    if (mapEdits.length > 3000) return res.status(400).json({ error: '맵 편집은 최대 3000개입니다.' });
+    mo.mapEdits = mapEdits.map(e => {
+      if (!e || typeof e.k !== 'string') return null;
+      const o = { k: e.k.slice(0, 120) }; if (e.del) { o.del = 1; return o; } if (e.ref) o.ref = 1;
+      return Object.assign(o, { x:_n(e.x,0,-9000,9000), y:_n(e.y,0,-500,2000), z:_n(e.z,0,-9000,9000), rx:_n(e.rx,0,-20,20), ry:_n(e.ry,0,-20,20), rz:_n(e.rz,0,-20,20), sx:_n(e.sx,1,0.01,500), sy:_n(e.sy,1,0.01,500), sz:_n(e.sz,1,0.01,500) });
+    }).filter(Boolean);
+  }
+  if (spawns) {
+    mo.spawns = mo.spawns || {};
+    for (const [t, v] of Object.entries(spawns)) {
+      if (!MT[t] || !MT[t].fix || !Array.isArray(v)) continue;
+      const x = _n(v[0], NaN, -9000, 9000), z = _n(v[1], NaN, -9000, 9000);
+      if (Number.isNaN(x) || Number.isNaN(z)) continue; mo.spawns[t] = [x, z];
+    }
+    applySpawns(mo.spawns);
+  }
   if (sandbox) {
     if (sandbox.length > 400) return res.status(400).json({ error: '샌드박스 블록은 최대 400개입니다.' });
     mo.sandbox = sandbox.map(cleanPart).filter(Boolean);
@@ -1157,14 +1188,18 @@ app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
   mo.by = req.userKey;
   db.mapOverrides = mo;
   try {
-    persist();
-    try {
-      const payload = JSON.stringify({ type:'map_overrides', version: mo.version, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[] });
-      for (const ws of wss.clients) {
-        if (ws.readyState === WebSocket.OPEN) try { ws.send(payload); } catch {}
-      }
-    } catch {}
-    res.json({ ok:true, version: mo.version, count: (mo.objects||[]).length, equipCount: Object.keys(mo.equipment||{}).length });
+    await persist();   // MongoDB 저장 완료 후에만 재시작
+    res.json({ ok:true, version: mo.version, restarting:true, count: (mo.objects||[]).length, equipCount: Object.keys(mo.equipment||{}).length });
+    setTimeout(() => {
+      try {
+        const msg = JSON.stringify({ type:'server_restart', msg:'맵/모델 업데이트가 저장되어 서버가 재시작됩니다.' });
+        for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) { try { ws.send(msg); } catch {} }
+      } catch {}
+      setTimeout(() => {
+        try { for (const ws of wss.clients) { try { ws.close(1012, 'restart'); } catch {} } } catch {}
+        disconnectFromMongoDB().finally(() => process.exit(0));   // Render 등이 자동으로 다시 기동
+      }, 1500);
+    }, 300);
   } catch (e) {
     res.status(500).json({ error: '저장 실패: '+(e.message||'') });
   }
