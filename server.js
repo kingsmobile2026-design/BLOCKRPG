@@ -794,7 +794,7 @@ function cleanState(input){
  const fields=['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg'],player={};
  for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v))player[k]=Math.max(-1000000,Math.min(1000000,v));}
  player.x=Math.max(-1100,Math.min(1100,Number(player.x)||0));player.z=Math.max(-2400,Math.min(400,Number(player.z)||0));
- player.lv=Math.max(1,Math.min(999,Math.floor(Number(player.lv)||1)));player.mhp=Math.max(1,Math.min(100000,Number(player.mhp)||100));player.hp=Math.max(0,Math.min(player.mhp,Number(player.hp)||0));
+ player.lv=Math.max(1,Math.min(1e6,Math.floor(Number(player.lv)||1)));player.mhp=Math.max(1,Math.min(100000,Number(player.mhp)||100));player.hp=Math.max(0,Math.min(player.mhp,Number(player.hp)||0));
  player.coin=Math.max(0,Math.min(1e9,Math.floor(Number(player.coin)||0)));player.xp=Math.max(0,Math.min(1e9,Math.floor(Number(player.xp)||0)));
  player.pot=Array.isArray(p.pot)?p.pot.slice(0,8).map(v=>Math.max(0,Math.min(999,Math.floor(Number(v)||0)))):[2,0,0,0];
  if(Array.isArray(p.ow)) player.ow=p.ow.filter(v=>Number.isInteger(v)&&v>=0&&v<40).slice(0,40);
@@ -1032,7 +1032,7 @@ app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
   const {username, level} = req.body||{};
   if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
   const lv=Math.floor(Number(level));
-  if(!Number.isFinite(lv)||lv<1||lv>999) return res.status(400).json({error:'레벨은 1~999입니다.'});
+  if(!Number.isFinite(lv)||lv<1||lv>1e6) return res.status(400).json({error:'레벨은 1 이상의 정수입니다.'});
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
   const p=ensurePlayer(key);
@@ -1728,7 +1728,7 @@ wss.on('connection',ws=>{
       if(typeof m.pvp==='boolean') p.pvp=m.pvp;
       if(Number.isFinite(m.hp)) p.hp=Math.max(0,Math.min(1e6,m.hp));
       if(Number.isFinite(m.mhp)) p.mhp=Math.max(1,Math.min(1e6,m.mhp));
-      if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(999,Math.floor(m.lv)));
+      if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv)));
       if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
       if(m.inv) p.invTill=Math.max(p.invTill||0,now+150);   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
       // 원격 애니메이션용 필드 전달
