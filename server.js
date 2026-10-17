@@ -78,6 +78,8 @@ async function connectMongo() {
   if (!db.mapOverrides || typeof db.mapOverrides !== 'object') db.mapOverrides = { version:1, objects:[], equipment:{} };
   if (!Array.isArray(db.mapOverrides.objects)) db.mapOverrides.objects = [];
   if (!db.mapOverrides.equipment || typeof db.mapOverrides.equipment !== 'object') db.mapOverrides.equipment = {};
+  if (!db.mapOverrides.models || typeof db.mapOverrides.models !== 'object') db.mapOverrides.models = {};
+  if (!Array.isArray(db.mapOverrides.sandbox)) db.mapOverrides.sandbox = [];
   _mongoReady = true;
 }
 
@@ -1081,19 +1083,32 @@ function cleanXform(o) {
     sz: Number.isFinite(sz) ? Math.min(12, Math.max(0.05, Math.round(sz*1000)/1000)) : 1
   };
 }
+function _n(v, def, lo, hi) { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v*1000)/1000)) : def; }
+function cleanPart(p) {
+  if (!p || typeof p !== 'object') return null;
+  return {
+    t: ['b','s','c','n'].includes(p.t) ? p.t : 'b',
+    c: Math.max(0, Math.min(0xffffff, Number(p.c)|0)), e: p.e ? 1 : 0,
+    x: _n(p.x,0,-500,500), y: _n(p.y,0,-100,500), z: _n(p.z,0,-500,500),
+    rx: _n(p.rx,0,-20,20), ry: _n(p.ry,0,-20,20), rz: _n(p.rz,0,-20,20),
+    sx: _n(p.sx,1,0.01,400), sy: _n(p.sy,1,0.01,400), sz: _n(p.sz,1,0.01,400)
+  };
+}
 app.get('/api/admin/map-overrides', requireAdmin, (req, res) => {
   const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
-  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, updatedAt: mo.updatedAt||null });
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[], updatedAt: mo.updatedAt||null });
 });
 app.get('/api/map-overrides', (req, res) => {
   const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
-  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{} });
+  res.json({ ok:true, version: mo.version|0, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[] });
 });
 app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
   const body = req.body || {};
   const objects = Array.isArray(body.objects) ? body.objects : null;
   const equipment = body.equipment && typeof body.equipment === 'object' ? body.equipment : null;
-  if (objects === null && equipment === null) return res.status(400).json({ error: 'objects 또는 equipment 가 필요합니다.' });
+  const models = body.models && typeof body.models === 'object' && !Array.isArray(body.models) ? body.models : null;
+  const sandbox = Array.isArray(body.sandbox) ? body.sandbox : null;
+  if (objects === null && equipment === null && models === null && sandbox === null) return res.status(400).json({ error: 'objects, equipment, models 또는 sandbox 가 필요합니다.' });
 
   const mo = db.mapOverrides || { version:1, objects:[], equipment:{} };
   if (objects) {
@@ -1125,6 +1140,18 @@ app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
     }
     mo.equipment = eq;
   }
+  if (models) {
+    const out = {};
+    for (const [k, v] of Object.entries(models).slice(0, 200)) {
+      if (!/^[wah]:\d+$/.test(k) || !v || !Array.isArray(v.parts)) continue;
+      out[k] = { parts: v.parts.slice(0, 64).map(cleanPart).filter(Boolean) };
+    }
+    mo.models = out;
+  }
+  if (sandbox) {
+    if (sandbox.length > 400) return res.status(400).json({ error: '샌드박스 블록은 최대 400개입니다.' });
+    mo.sandbox = sandbox.map(cleanPart).filter(Boolean);
+  }
   mo.version = (mo.version|0) + 1;
   mo.updatedAt = Date.now();
   mo.by = req.userKey;
@@ -1132,7 +1159,7 @@ app.post('/api/admin/map-overrides', requireAdmin, (req, res) => {
   try {
     persist();
     try {
-      const payload = JSON.stringify({ type:'map_overrides', version: mo.version, objects: mo.objects||[], equipment: mo.equipment||{} });
+      const payload = JSON.stringify({ type:'map_overrides', version: mo.version, objects: mo.objects||[], equipment: mo.equipment||{}, models: mo.models||{}, sandbox: mo.sandbox||[] });
       for (const ws of wss.clients) {
         if (ws.readyState === WebSocket.OPEN) try { ws.send(payload); } catch {}
       }
