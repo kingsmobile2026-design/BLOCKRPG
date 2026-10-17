@@ -1407,7 +1407,7 @@ app.get('/api/enhance/info', requireUser, (req, res) => {
 
 
 // ===== 환생 / 특성 / 룬 / 무한의 탑 =====
-const REBIRTH_MIN_LV = 100;
+const REBIRTH_MIN_LV = 50;
 const REBIRTH_TITLES = ['','환생자','각성자','초월자','영겁','무한'];
 const TALENT_DEFS = {
   // id: {tree, max, cost per level (points)}
@@ -1624,7 +1624,11 @@ const RSHOP = [
   { id:'raura', name:'환생 아우라', cost:30, type:'flag' },
   { id:'rpot', name:'환생 엘릭서 x3', cost:15, type:'pot', n:3 },
   { id:'rboost', name:'영구 공격 +5%', cost:50, type:'perm', key:'rAtk' },
-  { id:'rhp', name:'영구 체력 +5%', cost:50, type:'perm', key:'rHp' }
+  { id:'rhp', name:'영구 체력 +5%', cost:50, type:'perm', key:'rHp' },
+  { id:'rsword1', name:'환생의 검', cost:40, type:'w', index:19 },
+  { id:'rsword2', name:'영겁의 검', cost:100, type:'w', index:20 },
+  { id:'rarmor1', name:'환생의 갑옷', cost:40, type:'a', index:15 },
+  { id:'rarmor2', name:'영겁의 갑옷', cost:100, type:'a', index:16 }
 ];
 app.post('/api/rebirth/shop', requireUser, (req, res) => {
   const id = String((req.body&&req.body.id)||'');
@@ -1638,9 +1642,20 @@ app.post('/api/rebirth/shop', requireUser, (req, res) => {
   if (item.type==='flag') p.items['raura'] = 1;
   else if (item.type==='pot') { p.pot[3] = (p.pot[3]|0) + item.n; }
   else if (item.type==='perm') { p.items[item.key] = (p.items[item.key]|0) + 1; }
+  else if (item.type==='w') {
+    const idx = item.index|0;
+    if (!Array.isArray(p.ow)) p.ow = [0];
+    if (!p.ow.includes(idx)) p.ow.push(idx);
+    p.w = idx;
+  } else if (item.type==='a') {
+    const idx = item.index|0;
+    if (!Array.isArray(p.oa)) p.oa = [0];
+    if (!p.oa.includes(idx)) p.oa.push(idx);
+    p.a = idx;
+  }
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); } catch(e) {}
-  res.json({ ok:true, rcoin:p.rcoin, items:p.items, pot:p.pot });
+  res.json({ ok:true, rcoin:p.rcoin, items:p.items, pot:p.pot, w:p.w, a:p.a, ow:p.ow, oa:p.oa });
 });
 
 app.get('/healthz',(_req,res)=>res.json({ok:true, monsters:monsters.size}));
