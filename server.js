@@ -851,7 +851,7 @@ function cleanState(input){
  if(Number.isFinite(Number(p.towerDailyAt))) player.towerDailyAt=Math.floor(Number(p.towerDailyAt));
  if(Array.isArray(p.sbk)) player.sbk=p.sbk.filter(v=>typeof v==='string'&&/^[A-Za-z0-9_]{1,32}$/.test(v)).slice(0,60);
  if(Array.isArray(p.sks)) player.sks=p.sks.filter(v=>typeof v==='string'&&v.length>0&&v.length<=24).slice(0,8);
- if(p.look&&typeof p.look==='object'&&!Array.isArray(p.look)){const lk={};for(const k of['skin','hair','hs','hat','cape']){const v=Number(p.look[k]);if(Number.isFinite(v)&&v>=0&&v<=0xffffff)lk[k]=Math.floor(v);}player.look=lk;}
+ if(p.look&&typeof p.look==='object'&&!Array.isArray(p.look)){const lk={};for(const k of['skin','hair','hs','hat','cape','wing','halo','glass','aura','shirt','pants','boot','face','tail']){const v=Number(p.look[k]);if(Number.isFinite(v)&&v>=0&&v<=0xffffff)lk[k]=Math.floor(v);}player.look=lk;}
  const camera={};if(c&&typeof c==='object'){for(const k of ['yaw','pit','dist'])if(Number.isFinite(c[k]))camera[k]=Math.max(-1000,Math.min(1000,c[k]));}
  return {version:1,player,camera,savedAt:Date.now()};
 }
@@ -1693,6 +1693,16 @@ wss.on('connection',ws=>{
   Object.defineProperty(p,'invTill',{value:0,writable:true,enumerable:false});   // 서버 전용(브로드캐스트 제외)
   Object.defineProperty(p,'party',{value:null,writable:true,enumerable:false});
   Object.defineProperty(p,'key',{value:ws._userKey||null,writable:true,enumerable:false});
+  // 같은 계정의 기존 접속은 종료 (내 캐릭터가 복제되어 보이는 현상 방지)
+  if(ws._userKey){
+    for(const o of wss.clients){
+      if(o!==ws&&o._userKey===ws._userKey){
+        try{o.send(JSON.stringify({type:'dup'}));}catch{}
+        try{o.close(4001,'duplicate login');}catch{}
+        if(o.player){players.delete(o.player.id);wsById.delete(o.player.id);broadcast({type:'leave',id:o.player.id});}
+      }
+    }
+  }
   players.set(id,p); ws.player=p; wsById.set(id,ws);
   ws._tokens=40; ws._tokT=Date.now();
 
