@@ -387,7 +387,8 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
-  if (m.shield && m.shield.crystal) {   // 월드보스 수정 쉴드: 수정을 부숴야 함
+  m.shield = null; m.crystals = null; // 보스 쉴드 기능 제거
+  if (false && m.shield && m.shield.crystal) {   // 비활성화된 기존 쉴드 코드
     if (Date.now() - (ws._shT || 0) > 800) {
       ws._shT = Date.now();
       try { ws.send(JSON.stringify({ type: 'shield_block', id: m.id, elem: 'all' })); } catch {}
@@ -395,7 +396,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     return;
   }
   // 원소 쉴드: 맞는 속성만 쉴드 파괴, 아니면 본체 피해 0
-  if (d.boss && m.shield && m.shield.hp > 0) {
+  if (false && d.boss && m.shield && m.shield.hp > 0) {
     const ok = elem && (elem === m.shield.elem || elem === 'all');
     if (!ok) {
       if (Date.now() - (ws._shT || 0) > 800) {
@@ -563,9 +564,10 @@ function tickBossGimmick(m, d, dt, now, alive) {
     m.groggy -= dt;
     if (m.groggy <= 0) { m.groggy = 0; m.crystals = null; sendNear(m.x, m.z, { type: 'groggy_end', id: m.id }); }
   }
-  maybeStartShield(m, d);
-  // 수정 쉴드 보스 (하데스 + 세라핌): HP 50% 이하에서 (1회) 수정 4개 + 쉴드
-  if (m.type === 'worldboss' || m.type === 'heavenlord') {
+  m.shield = null;
+  if (m.crystals) { m.crystals = null; sendNear(m.x, m.z, {type:'cr_clear', id:m.id}); }
+  // 보스 쉴드/수정 기믹은 비활성화됨
+  if (false && (m.type === 'worldboss' || m.type === 'heavenlord')) {
     if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
       m._wbDone = true;
       m.cast = null; m.floor = null;
@@ -755,7 +757,7 @@ function tickMonsters(dt, now) {
       }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
-    const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
+    const wbLock = false; // 보스 쉴드 제거
     const casting = (d.boss && !wbLock && !stunned) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
     if (stunned) { m.cast = null; }
     else if (casting) { /* 보스 특수 패턴 시전 중 */ }
@@ -1222,6 +1224,30 @@ app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
   pushAdminStat(key, {lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin});
   res.json({ok:true, username:db.users[key].username, lv:p.lv, coin:p.coin, mhp:p.mhp});
 });
+
+app.post('/api/admin/unlock-god', requireAdmin, (req,res)=>{
+  const {username} = req.body||{};
+  if(typeof username!=='string') return res.status(400).json({error:'닉네임이 필요합니다.'});
+  const key=usernameKey(username);
+  if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
+  const p=ensurePlayer(key); p.godUnlocked=true;
+  db.states[key].savedAt=Date.now();
+  try{persist();}catch(e){}
+  pushAdminStat(key,{godUnlocked:true,lv:p.lv,coin:p.coin,xp:p.xp,nx:p.nx,hp:p.hp,mhp:p.mhp});
+  res.json({ok:true,username:db.users[key].username,godUnlocked:true});
+});
+app.post('/api/admin/set-magesword', requireAdmin, (req,res)=>{
+  const {username} = req.body||{};
+  if(typeof username!=='string') return res.status(400).json({error:'닉네임이 필요합니다.'});
+  const key=usernameKey(username);
+  if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
+  const p=ensurePlayer(key); p.job='magesword'; p.msUnlocked=true;
+  db.states[key].savedAt=Date.now();
+  try{persist();}catch(e){}
+  pushAdminStat(key,{job:'magesword',msUnlocked:true,lv:p.lv,coin:p.coin,xp:p.xp,nx:p.nx,hp:p.hp,mhp:p.mhp});
+  res.json({ok:true,username:db.users[key].username,job:p.job,msUnlocked:true});
+});
+
 app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
   const {username, amount} = req.body||{};
   if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
@@ -2281,8 +2307,9 @@ wss.on('connection',ws=>{
       if(typeof m.pvp==='boolean') p.pvp=m.pvp;
       if(Number.isFinite(m.hp)) p.hp=Math.max(0,Math.min(1e6,m.hp));
       if(Number.isFinite(m.mhp)) p.mhp=Math.max(1,Math.min(1e6,m.mhp));
-      if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv)));
-      if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
+      // 계정의 표시 이름은 로그인 토큰에서 결정되며 클라이언트가 덮어쓸 수 없음
+      if(ws._userKey){ const saved=ensurePlayer(ws._userKey); p.lv=Math.max(1,Math.min(1e6,Math.floor(saved.lv||1))); p.job=String(saved.job||''); }
+      else { if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv))); if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job; }
       if(typeof m.hadesSword==='boolean') p.hadesSword=m.hadesSword;
       if(typeof m.godUnlocked==='boolean') p.godUnlocked=m.godUnlocked;
       if(m.inv) p.invTill=Math.max(p.invTill||0,now+150);   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
