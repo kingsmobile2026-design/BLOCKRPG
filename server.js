@@ -257,6 +257,14 @@ Object.assign(WORLD.MT, {
 });
 Object.assign(WORLD.ZT, {voidspawn:'abyss',abyssfiend:'abyss',nightcrawler:'abyss',voidknight:'abyss',abyssbeast:'abyss',abysslord:'abyss'});
 WORLD.BOSS.abysslord=[-440,-570];
+// ===== 신(GOD) 지역: 구름 군도 =====
+WORLD.ZD.god = [[820,1060,-1200,-900]]; // 절벽 없이 구름 섬이 흩어진 하늘 지역
+Object.assign(WORLD.MT, {
+  zeus:{hp:24000000,dmg:7500,xp:5000000,g:2500000,sp:6.5,reach:8,rt:900,sc:4.8,n:1,ag:80,cd:2.2,boss:1,fix:[980,-1080],nm:'제우스'}
+});
+Object.assign(WORLD.ZT, {zeus:'god'});
+WORLD.BOSS.zeus=[980,-1080];
+// ===== /신(GOD) 지역 =====
 // ===== /심연 지대 =====
 
 const ZONE_RECTS = WORLD.ZD;
@@ -272,7 +280,8 @@ const VILLAGE_R = 18;            // 마을 반경 (몬스터 진입/공격 불�
 const BOSS_EXCLUSION = [
   { x:760, z:-740, r:60 },    // 하데스 신전
   { x:-340, z:-500, r:55 },   // 세라핌 신구역
-  { x:-440, z:-570, r:55 }    // 포세이돈 신전
+  { x:-440, z:-570, r:55 },   // 포세이돈 신전
+  { x:980, z:-1080, r:75 }    // 제우스 구름 왕좌
 ];
 const nearBossExclusion = (x,z) => BOSS_EXCLUSION.some(b => Math.hypot(x-b.x,z-b.z) < b.r);
 const inBossSanctuary = (x,z) => nearBossExclusion(x,z);
@@ -315,7 +324,7 @@ function respawnMonster(m) {
   const [x, z] = pickPos(m.type);
   m.x = x; m.z = z; m.px = x; m.pz = z; m.home = [x, z];
   m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8); m._ret = null; m._lastTgtId = null; m._wbDone = false; m.shield = null; m.crystals = null; m.floor = null; m.stun = 0;
-  m.dmg.clear(); m.ver++;
+  m.dmg.clear(); m.fireDot = null; m.ver++;
 }
 function initMonsters() {
   for (const [type, d] of Object.entries(MT)) for (let i = 0; i < d.n; i++) spawnMonster(type);
@@ -332,7 +341,7 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // 플레이어가 몬스터를 타격 (클라이언트가 보고한 피해량 — 거리/빈도/상한을 서버가 검증)
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
-const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150 };
+const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200 };
 const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
@@ -405,6 +414,8 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     return; // 쉴드 중에는 본체 피해 없음
   }
   if (d.boss) { dmg = bossLimit(m, d, ws, dmg); if (dmg < 1) return; }
+  // 하데스의 검: 적중한 몬스터에게 사망할 때까지 최대 체력의 1% 화염 지속 피해
+  if (p.hadesSword) m.fireDot = { source:p.id, next:Date.now()+1000 };
   // 그로기: 크리티컬 200%
   if (m.groggy && m.groggy > 0) dmg = Math.floor(dmg * 2);
   // 넉백 약화: 일반 몬스터 35%, 보스 20%만 적용
@@ -416,7 +427,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   m.ver++;
   if (m.hp <= 0) {
     if (m.crystals) sendNear(m.x, m.z, { type: 'cr_clear', id: m.id });
-    m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0; m.cast = null; m.shield = null; m.groggy = 0; m.crystals = null; m.floor = null;
+    m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0; m.cast = null; m.shield = null; m.groggy = 0; m.crystals = null; m.floor = null; m.fireDot = null;
     // 보상: 마지막 일격을 가한 사람 + 몬스터 체력의 2% 이상 피해를 준 접속자
     const got = new Set();
     for (const [pid, dm] of m.dmg) {
@@ -425,6 +436,10 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
       if (w && w.readyState === WebSocket.OPEN) {
         got.add(pid);
         try { w.send(JSON.stringify({ type: 'kill', id: m.id, mt: m.type })); } catch {}
+        if (m.type === 'heavenlord' && !w.player.godUnlocked) {
+          if (Math.random() < 0.10) { w.player.godUnlocked=true; try { w.send(JSON.stringify({type:'god_portal_unlock'})); } catch {} }
+          else { try { w.send(JSON.stringify({type:'god_portal_fail'})); } catch {} }
+        }
         if (w._userKey) {
           bumpStat(w._userKey, 'kills', 1); if (d.boss) bumpStat(w._userKey, 'boss', 1);
           const g = guildOfKey(w._userKey);
@@ -465,7 +480,8 @@ const BOSS_SK = {
   demonlord: ['slam', 'breath', 'meteor', 'charge', 'nova'],
   dragon: ['breath', 'slam', 'meteor', 'leap'],
   worldboss: ['slam', 'breath', 'meteor', 'charge', 'nova', 'leap'],
-  volcanolord: ['slam', 'breath', 'meteor', 'charge', 'nova']
+  volcanolord: ['slam', 'breath', 'meteor', 'charge', 'nova'],
+  zeus: ['slam', 'meteor', 'nova', 'breath']
 };
 function sendNear(x, z, obj, range = AOI_RADIUS + 60) {
   const raw = JSON.stringify(obj);
@@ -495,7 +511,7 @@ function inCone(p, ox, oz, dir, len, half) {
 function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 10); }
 
 // ===== 보스 쉴드 / 그로기 / 장판 기믹 =====
-const BOSS_SHIELD_ELEMS = {}; // 일반 보스 원소 쉴드 제거: 수정 쉴드는 하데스·세라핌 전용
+const BOSS_SHIELD_ELEMS = { heavenlord:'holy', abysslord:'ice' }; // 천상 지역 보스와 포세이돈은 원소 쉴드 사용
 const WB_CRYSTALS = 4, WB_SHIELD_REGEN = 0.005;   // 수정 쉴드: 수정 4개(각 보스 최대체력 10%), 쉴드 중 초당 0.5% 회복
 const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', holy:'신성 쉴드', all:'만능 쉴드' };
 function maybeStartShield(m, d) {
@@ -669,6 +685,21 @@ function tickMonsters(dt, now) {
   for (const m of monsters.values()) {
     const d = MT[m.type]; if (!d) continue;
     if (m.dead) { m.rt -= dt; if (m.rt <= 0) respawnMonster(m); continue; }
+    // 하데스의 검 화염: 모든 몬스터/보스에게 면역 없이 최대 체력의 1%를 1초마다 적용
+    if (m.fireDot && now >= m.fireDot.next) {
+      m.fireDot.next = now + 1000;
+      m.hp -= Math.max(1, Math.floor(m.mhp * 0.01)); m.ver++;
+      if (m.hp <= 0) {
+        const w = wsById.get(m.fireDot.source), p = w && w.player;
+        if (p) {
+          const oxp=p.x, ozp=p.z, oldShield=m.shield;
+          p.x=m.x; p.z=m.z; m.hp=1; m.shield=null;
+          try { applyPlayerHit(p,w,m.id,1,0,'fire'); } catch(e) { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; }
+          p.x=oxp; p.z=ozp; if (m.dead) m.fireDot=null; else m.shield=oldShield;
+        } else { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; m.cast=null; m.shield=null; m.fireDot=null; m.ver++; }
+      }
+      if (m.dead) continue;
+    }
     const ox = m.x, oz = m.z, ohp = m.hp, oface = m.face;
     m.cd -= dt; m.t += dt * 4;
     if (m.kx || m.kz) {
@@ -710,8 +741,18 @@ function tickMonsters(dt, now) {
     // ★ 마검사 아이스볼: 스턴 중에는 이동·공격·스킬·쉴드 시전 불가 (월드보스는 면역)
     let stunned = false;
     if (m.stun > 0) {
-      if (m.type === 'worldboss') m.stun = 0;
+      if (m.type === 'worldboss' || m.type === 'heavenlord' || m.type === 'abysslord') m.stun = 0;
       else { m.stun -= dt; if (m.stun > 0) stunned = true; else { m.stun = 0; m.ver++; } }
+    }
+    // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 2,000 감소
+    if (m.type === 'zeus') {
+      m._lightningT = (m._lightningT == null ? rnd(3,5) : m._lightningT) - dt;
+      if (m._lightningT <= 0) {
+        m._lightningT = rnd(3.5,6.5);
+        const lx=rnd(835,1045), lz=rnd(-1180,-920);
+        sendNear(lx,lz,{type:'zeus_lightning',x:lx,z:lz,r:4,dmg:2000},AOI_RADIUS+60);
+        for (const pl of alive) if (pl.x>=820&&pl.x<=1060&&pl.z>=-1200&&pl.z<=-900&&Math.hypot(pl.x-lx,pl.z-lz)<=4) bossHit(m,pl,2000,now);
+      }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
     const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
@@ -844,13 +885,14 @@ function seedAdmin(){
 
 function ensurePlayer(key){
   if(!db.states[key] || !db.states[key].player){
-    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{}},camera:{},savedAt:Date.now()};
+    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{},godUnlocked:false,hadesSword:false,godQuestAccepted:false,godQuestDone:false},camera:{},savedAt:Date.now()};
   }
   const p=db.states[key].player;
   if(!Array.isArray(p.pot)) p.pot=[2,0,0,0];
   while(p.pot.length<4) p.pot.push(0);
   if(!Array.isArray(p.ow)) p.ow=[0];
   if(!Array.isArray(p.oa)) p.oa=[0];
+  if(!Array.isArray(p.sw)) p.sw=[]; p.sw=p.sw.filter(v=>![21,22,23,24].includes(v));   // 마검사 자동공격용 "검 도감" (환생해도 유지, 천상 검 제외)
   if(!p.qa || typeof p.qa!=='object') p.qa={};
   if(!Array.isArray(p.qd)) p.qd=[];
   if(!p.questProgress || typeof p.questProgress!=='object') p.questProgress={};
@@ -896,6 +938,7 @@ function cleanState(input){
  player.pot=Array.isArray(p.pot)?p.pot.slice(0,8).map(v=>Math.max(0,Math.min(999,Math.floor(Number(v)||0)))):[2,0,0,0];
  if(Array.isArray(p.ow)) player.ow=p.ow.filter(v=>Number.isInteger(v)&&v>=0&&v<40).slice(0,40);
  if(Array.isArray(p.oa)) player.oa=p.oa.filter(v=>Number.isInteger(v)&&v>=0&&v<40).slice(0,40);
+ if(Array.isArray(p.sw)) player.sw=[...new Set(p.sw.filter(v=>Number.isInteger(v)&&v>=0&&v<40&&![21,22,23,24].includes(v)))].slice(0,40);
  if(p.items && typeof p.items==='object' && !Array.isArray(p.items)){
   const it={};let n=0;
   for(const [k,v] of Object.entries(p.items)){
@@ -927,6 +970,10 @@ function cleanState(input){
   // qa 없으면 questProgress로 채움
   if(!player.qa) player.qa=Object.assign({}, qp);
  }
+ if(p.godUnlocked===true) player.godUnlocked=true;
+ if(p.hadesSword===true) player.hadesSword=true;
+ if(p.godQuestAccepted===true) player.godQuestAccepted=true;
+ if(p.godQuestDone===true) player.godQuestDone=true;
  if(typeof p.job==='string'&&/^[a-z_]{1,24}$/.test(p.job)) player.job=p.job;
  if(p.msUnlocked===true||p.job==='magesword') player.msUnlocked=true;
  if(Number.isFinite(Number(p.jstep))) player.jstep=Math.max(0,Math.min(10,Number(p.jstep)));
@@ -1008,6 +1055,10 @@ app.post('/api/save',requireUser,(req,res)=>{
     }
     if(Array.isArray(prev.oa) && Array.isArray(np.oa)){
       const s=new Set([...prev.oa, ...np.oa]); np.oa=[...s].filter(v=>Number.isInteger(v)&&v>=0).slice(0,40);
+    }
+    // 검 도감(sw) 합집합 (환생 후에도 유지)
+    if(Array.isArray(prev.sw)){
+      const s=new Set([...prev.sw, ...(Array.isArray(np.sw)?np.sw:[])]); np.sw=[...s].filter(v=>Number.isInteger(v)&&v>=0&&v<40&&![21,22,23,24].includes(v)).slice(0,40);
     }
     // 레벨은 더 높은 쪽 유지 (롤백 방지)
     if((prev.lv|0) > (np.lv|0)){
@@ -1729,7 +1780,11 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   // 환생 시 코인·장비 초기화 (특성/룬/환생코인/강화재료(items)는 유지)
   p.coin = 0;
   // 환생 전용 장비(환생의 검/영겁의 검, 환생의 갑옷/영겁의 갑옷)는 초기화하지 않고 유지
-  const RB_W = [19, 20, 21, 22, 23, 24], RB_A = [15, 16, 17, 18, 19, 20]; // 환생/영겁/천상 장비 유지
+  // 환생 전 보유했던 모든 검을 "검 도감"에 기록 (마검사 자동공격용 · 천상 검 21~24 제외)
+  const HV_W = [21, 22, 23, 24];
+  p.sw = [...new Set([...(Array.isArray(p.sw) ? p.sw : []), ...(Array.isArray(p.ow) ? p.ow : [])])]
+    .filter(v => Number.isInteger(v) && v >= 0 && !HV_W.includes(v)).slice(0, 40);
+  const RB_W = [19, 20], RB_A = [15, 16]; // 환생/영겁 장비만 유지 (천상 장비는 환생 시 사라짐)
   const keepOw = (Array.isArray(p.ow) ? p.ow : []).filter(v => RB_W.includes(v));
   const keepOa = (Array.isArray(p.oa) ? p.oa : []).filter(v => RB_A.includes(v));
   if (!RB_W.includes(p.w|0)) { p.w = 0; p.we = 0; }
@@ -1748,7 +1803,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
     ok:true, rebirth:p.rebirth, rbGain, rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
     rcoinGain, rstatGain,
     lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts,
-    coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
+    coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, sw:p.sw, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
   });
 });
 
@@ -2228,6 +2283,8 @@ wss.on('connection',ws=>{
       if(Number.isFinite(m.mhp)) p.mhp=Math.max(1,Math.min(1e6,m.mhp));
       if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv)));
       if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
+      if(typeof m.hadesSword==='boolean') p.hadesSword=m.hadesSword;
+      if(typeof m.godUnlocked==='boolean') p.godUnlocked=m.godUnlocked;
       if(m.inv) p.invTill=Math.max(p.invTill||0,now+150);   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
       // 원격 애니메이션용 필드 전달
       p.atk = m.atk ? 1 : 0;
