@@ -548,7 +548,7 @@ const DEATH_EVADE_MS = 60000, DEATH_EVADE_CD = 120000, DEATH_EVADE_MULT = 0.1;  
 const DEATH_SPEAR_COUNT = 15, DEATH_SPEAR_RANGE = 20, DEATH_SPEAR_RATE = 0.15, DEATH_SPEAR_INTERVAL = 600;
 const DEATH_MAX_LIVES = 2, DEATH_REVIVE_INV_MS = 4000;
 const DEATH_SOUL_SPEED = 3;                         // 영혼 모드 이동속도 배율 (대쉬 불가)
-const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 6:'soul', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul' };
+const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 6:'soul', 7:'harvest', 8:'execution', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul', harvest:'harvest', execution:'execution' };
 
 function deathSt(p) {   // 죽음의 신이면 DB 플레이어 객체, 아니면 null
   if (!p || !p.key) return null;
@@ -566,7 +566,7 @@ function deathStateMsg(st, now) {
   return {
     type: 'death_state', active: true, job: 'deathgod',
     lives: st.deathLives | 0, maxLives: DEATH_MAX_LIVES,
-    skills: { guide: !!ds.guide, scythe: !!ds.scythe, spears: !!ds.spears, soul: !!ds.soul },
+    skills: { guide: !!ds.guide, scythe: !!ds.scythe, spears: !!ds.spears, soul: !!ds.soul, harvest: !!ds.harvest, execution: !!ds.execution },
     evadeLeft: Math.max(0, (Number(ds.evadeUntil) || 0) - now),
     evadeCd: Math.max(0, (Number(ds.evadeCd) || 0) - now),
     spearCount: DEATH_SPEAR_COUNT, soulSpeedMul: DEATH_SOUL_SPEED, soulDash: false
@@ -637,7 +637,7 @@ function tickDeath(now) {
     if (!p || ws.readyState !== WebSocket.OPEN || p.hp <= 0) continue;
     const st = deathSt(p); if (!st || !st.deathSkills) continue;
     if (inSafeAny(p.x, p.z)) continue;
-    const ds = st.deathSkills;
+    const ds = st.deathSkills; if(ds.execution && Number(ds.executionUntil||0)<=now){ds.execution=false;ds.executionUntil=0;pushDeathState(p.key)}
     if (doGuide && ds.guide) {
       for (const m of monsters.values()) {
         if (deathGuideReady(p, m) && Math.hypot(m.x - p.x, m.z - p.z) <= DEATH_GUIDE_RANGE) deathGuideKill(p, m);
@@ -1482,7 +1482,7 @@ app.post('/api/admin/set-rebirth', requireAdmin, (req,res)=>{
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
   const p=ensurePlayer(key); const prev=p.rebirth|0; p.rebirth=rb;
   if(rb>=DEATH_REBIRTH){
-    if(prev<DEATH_REBIRTH){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0}; p.deathCutsceneDone=false; }
+    if(prev<DEATH_REBIRTH){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,harvest:false,execution:false,executionUntil:0,evadeCd:0}; p.deathCutsceneDone=false; }
     p.title='죽음의 신';
   } else if(prev>=DEATH_REBIRTH && p.job==='deathgod'){ p.job=''; p.deathCutsceneDone=false; }
   db.states[key].savedAt=Date.now();
@@ -2075,7 +2075,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.pot = [2, 0, 0, 0];
   if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
   p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
-  if(p.rebirth >= 500){ p.job='deathgod'; if(prevRb < 500){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0}; } p.title='죽음의 신'; }
+  if(p.rebirth >= 500){ p.job='deathgod'; if(prevRb < 500){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,harvest:false,execution:false,executionUntil:0,evadeCd:0}; } p.title='죽음의 신'; }
   // 환생해도 누적된 최대 체력/환생 스탯 보너스는 유지
   p.mhp = Math.max(100, Math.floor(Number(p.mhp)||100));
   p.hp = p.mhp;
@@ -2654,11 +2654,14 @@ wss.on('connection',ws=>{
       const st=deathSt(p); if(!st) return msgTo(p.id,'죽음의 신만 사용할 수 있어요.');
       if(now-(ws._dsT||0)<150) return; ws._dsT=now;
       const sk=DEATH_SKILL_IDS[String(m.skill)]; if(!sk) return;
-      if(!st.deathSkills||typeof st.deathSkills!=='object') st.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0};
-      const ds=st.deathSkills;
+      if(!st.deathSkills||typeof st.deathSkills!=='object') st.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,harvest:false,execution:false,executionUntil:0,evadeCd:0};
+      const ds=st.deathSkills; if(typeof ds.harvest!=='boolean')ds.harvest=false; if(typeof ds.execution!=='boolean')ds.execution=false;
       if(sk==='evade'){
+        
         if((Number(ds.evadeCd)||0)>now){ msgTo(p.id,'죽음의 회피 쿨타임 '+Math.ceil(((Number(ds.evadeCd)||0)-now)/1000)+'초'); pushDeathState(p.key); return; }
         ds.evadeUntil=now+DEATH_EVADE_MS; ds.evadeCd=now+DEATH_EVADE_CD;
+      } else if(sk==='execution'){
+        ds.execution=(typeof m.on==='boolean')?m.on:!ds.execution; ds.executionUntil=ds.execution?now+20000:0;
       } else {
         ds[sk]=(typeof m.on==='boolean')?m.on:!ds[sk];
         if(sk==='spears') p.sp=!!ds.spears;
