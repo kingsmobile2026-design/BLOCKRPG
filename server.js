@@ -439,6 +439,8 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
+  if (elem !== 'spear') p.lastHit = dmg;                       // 죽음의 창 기준 데미지(클라가 bd 를 안 보낼 때 대체값)
+  if (deathOn(p, 'scythe')) dmg = Math.floor(dmg * DEATH_SCYTHE_MULT);   // 죽음의 낫: 데미지 5배
   if (false && m.shield && m.shield.crystal) {   // 보스 쉴드 비활성화
     if (Date.now() - (ws._shT || 0) > 800) {
       ws._shT = Date.now();
@@ -477,7 +479,12 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   if (m.type === 'worldboss' && ws._userKey) bumpStat(ws._userKey, 'wb', dmg);
   if (kb > 0) { const dd = dist || 1; m.kx = dx / dd * kb; m.kz = dz / dd * kb; }
   m.ver++;
-  if (m.hp <= 0) {
+  // 죽음의 인도: 체력 30% 이하면 즉사 (제우스/아레스 제외) — 죽음의 창 피해에도 동일 적용
+  if (m.hp > 0 && deathGuideReady(p, m)) { m.dmg.set(p.id, (m.dmg.get(p.id) || 0) + Math.max(1, Math.ceil(m.hp))); m.hp = 0; }
+  if (m.hp <= 0) killMonster(m, d, p);
+}
+function killMonster(m, d, p) {
+  {
     if (m.crystals) sendNear(m.x, m.z, { type: 'cr_clear', id: m.id });
     m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0; m.cast = null; m.shield = null; m.groggy = 0; m.crystals = null; m.floor = null; m.fireDot = null;
     // 보상: 마지막 일격을 가한 사람 + 몬스터 체력의 2% 이상 피해를 준 접속자
@@ -519,6 +526,136 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
 }
 const MAX_HIT_DMG = 500000;
 
+// ===================================================================================
+//  죽음의 신 (환생 500회 달성 시 전직) — 스킬/패시브는 전부 서버 권한
+//  1 죽음의 인도(on/off) · 2 죽음의 낫(on/off) · 3 죽음의 회피(발동형) · 4 죽음의 창(on/off)
+//  5 패시브: 목숨 2개 · 6 영혼 모드(on/off)
+// ===================================================================================
+const DEATH_REBIRTH = 500;
+const DEATH_GUIDE_RANGE = 50;                       // 죽음의 인도 판정 반경(m)
+const DEATH_GUIDE_EXCLUDE = new Set(['zeus', 'areschampion']);   // 제우스, 아레스는 즉사 면역
+const DEATH_SCYTHE_MULT = 5;                        // 죽음의 낫 데미지 배율
+const DEATH_EVADE_MS = 60000, DEATH_EVADE_CD = 120000, DEATH_EVADE_MULT = 0.1;   // 약 1분 받는 피해 x0.1 / 쿨 2분
+const DEATH_SPEAR_COUNT = 15, DEATH_SPEAR_RANGE = 20, DEATH_SPEAR_RATE = 0.15, DEATH_SPEAR_INTERVAL = 600;
+const DEATH_MAX_LIVES = 2, DEATH_REVIVE_INV_MS = 4000;
+const DEATH_SOUL_SPEED = 3;                         // 영혼 모드 이동속도 배율 (대쉬 불가)
+const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 6:'soul', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul' };
+
+function deathSt(p) {   // 죽음의 신이면 DB 플레이어 객체, 아니면 null
+  if (!p || !p.key) return null;
+  const s = db.states[p.key], pl = s && s.player;
+  return pl && (pl.job === 'deathgod' || (pl.rebirth | 0) >= DEATH_REBIRTH) ? pl : null;
+}
+function deathOn(p, k) { const s = deathSt(p); return !!(s && s.deathSkills && s.deathSkills[k]); }
+function dmgTakenMult(p, now) {   // 죽음의 회피 중이면 받는 피해 0.1배
+  const s = deathSt(p);
+  return s && s.deathSkills && Number(s.deathSkills.evadeUntil) > now ? DEATH_EVADE_MULT : 1;
+}
+function deathStateMsg(st, now) {
+  const ds = st.deathSkills || {};
+  if (!(st.job === 'deathgod' || (st.rebirth | 0) >= DEATH_REBIRTH)) return { type: 'death_state', active: false };
+  return {
+    type: 'death_state', active: true, job: 'deathgod',
+    lives: st.deathLives | 0, maxLives: DEATH_MAX_LIVES,
+    skills: { guide: !!ds.guide, scythe: !!ds.scythe, spears: !!ds.spears, soul: !!ds.soul },
+    evadeLeft: Math.max(0, (Number(ds.evadeUntil) || 0) - now),
+    evadeCd: Math.max(0, (Number(ds.evadeCd) || 0) - now),
+    spearCount: DEATH_SPEAR_COUNT, soulSpeedMul: DEATH_SOUL_SPEED, soulDash: false
+  };
+}
+function pushDeathState(key) {
+  const s = db.states[key], st = s && s.player; if (!st) return;
+  const raw = JSON.stringify(deathStateMsg(st, Date.now()));
+  for (const c of socketsOf(key)) { try { c.send(raw); } catch {} }
+}
+function deathInfo(key) {
+  const s = db.states[key], st = s && s.player; if (!st) return null;
+  return deathStateMsg(st, Date.now());
+}
+// 전직 처리 (환생 500회 달성 시 1회 컷씬). 이미 500회 이상이던 계정도 접속 시 한 번 컷씬을 본다.
+function awakenDeathGod(key, p) {
+  if (!p || (p.rebirth | 0) < DEATH_REBIRTH) return false;
+  p.job = 'deathgod';
+  for (const pl of players.values()) if (pl.key === key) pl.job = 'deathgod';
+  const first = !p.deathCutsceneDone;
+  if (first) {
+    p.deathCutsceneDone = true; persistSoon();
+    for (const c of socketsOf(key)) { try { c.send(JSON.stringify({ type: 'death_cutscene', job: 'deathgod', title: '죽음의 신' })); } catch {} }
+  }
+  pushDeathState(key);
+  return first;
+}
+function deathGuideReady(p, m) {
+  return !m.dead && m.hp > 0 && m.hp <= m.mhp * 0.3 && !DEATH_GUIDE_EXCLUDE.has(m.type) && deathOn(p, 'guide');
+}
+function deathGuideKill(p, m) {
+  const d = MT[m.type]; if (!d) return;
+  m.dmg.set(p.id, (m.dmg.get(p.id) || 0) + Math.max(1, Math.ceil(m.hp)));   // 보상이 나에게 들어오도록 기여도 기록
+  m.hp = 0; m.ver++;
+  killMonster(m, d, p);
+}
+// 죽음의 창: 15개 고정, 창마다 다른 몬스터를 노리고 몬스터가 15마리 미만이면 남는 창을 한 마리씩 더 배정
+function deathSpearsAttack(p, ws) {
+  const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  const cand = [];
+  for (const m of monsters.values()) {
+    if (m.dead || m.hp <= 0) continue;
+    const dd = Math.hypot(m.x - p.x, m.z - p.z);
+    if (dd <= DEATH_SPEAR_RANGE) cand.push([dd, m]);
+  }
+  if (!cand.length) return;
+  cand.sort((a, b) => a[0] - b[0]);
+  const tg = cand.length > DEATH_SPEAR_COUNT ? cand.slice(0, DEATH_SPEAR_COUNT) : cand;
+  const per = new Map(), assign = [];
+  for (let i = 0; i < DEATH_SPEAR_COUNT; i++) {
+    const m = tg[i % tg.length][1];
+    assign.push(m.id); per.set(m, (per.get(m) || 0) + 1);
+  }
+  sendNear(p.x, p.z, { type: 'death_spears', id: p.id, t: assign, n: DEATH_SPEAR_COUNT }, 150);   // 창마다 타겟 몬스터 id (연출용)
+  const one = Math.floor(base * DEATH_SPEAR_RATE);   // 창 1개 = 내 데미지의 15%
+  if (one < 1) return;
+  for (const [m, n] of per) applyPlayerHit(p, ws, m.id, one * n, 0, 'spear');
+}
+let _deathGuideT = 0, _deathSpearT = 0;
+function tickDeath(now) {
+  const doGuide = now - _deathGuideT >= 200; if (doGuide) _deathGuideT = now;
+  const doSpear = now - _deathSpearT >= DEATH_SPEAR_INTERVAL; if (doSpear) _deathSpearT = now;
+  if (!doGuide && !doSpear) return;
+  for (const ws of wss.clients) {
+    const p = ws.player;
+    if (!p || ws.readyState !== WebSocket.OPEN || p.hp <= 0) continue;
+    const st = deathSt(p); if (!st || !st.deathSkills) continue;
+    if (inSafeAny(p.x, p.z)) continue;
+    const ds = st.deathSkills;
+    if (doGuide && ds.guide) {
+      for (const m of monsters.values()) {
+        if (deathGuideReady(p, m) && Math.hypot(m.x - p.x, m.z - p.z) <= DEATH_GUIDE_RANGE) deathGuideKill(p, m);
+      }
+    }
+    if (doSpear && ds.spears) deathSpearsAttack(p, ws);
+  }
+}
+// 패시브: 목숨 2개 — 죽은 자리에서 즉시 부활(아우라 연출), 사망 페널티(코인 손실) 없음
+function deathLifeCheck(p, ws, st, now) {
+  if ((p.reviveUntil || 0) > now) return;
+  const lives = st.deathLives | 0;
+  if (lives > 0) {
+    st.deathLives = lives - 1;
+    p.hp = p.mhp; p.invTill = now + DEATH_REVIVE_INV_MS; p.reviveUntil = now + 2000;
+    if (db.states[p.key]) db.states[p.key].savedAt = Date.now();
+    persistSoon();
+    sendTo(p.id, { type: 'death_revive', x: q2(p.x), y: q2(p.y || 0), z: q2(p.z), hp: p.mhp, mhp: p.mhp, lives: st.deathLives, aura: true, keepCoin: true, invMs: DEATH_REVIVE_INV_MS });
+    sendNear(p.x, p.z, { type: 'death_revive_fx', id: p.id, x: q2(p.x), z: q2(p.z) }, 150);
+    pushDeathState(p.key);
+  } else {
+    st.deathLives = DEATH_MAX_LIVES;   // 목숨이 다 떨어져 진짜 사망 → 다음 생을 위해 목숨 재충전
+    persistSoon();
+    sendTo(p.id, { type: 'death_final', lives: st.deathLives });   // 클라이언트는 일반 사망 처리(코인 손실 등)
+    pushDeathState(p.key);
+  }
+}
+
+
 // ===== 보스 특수 패턴 (예고 → 지연 후 판정, 피해는 'mdmg' 로 피격자에게 전달) =====
 const BOSS_SK = {
   kingslime: ['leap', 'slam'],
@@ -546,7 +683,7 @@ function sendNear(x, z, obj, range = AOI_RADIUS + 60) {
 }
 function bossHit(m, p, dmg, now) {
   if (inSafeAny(p.x, p.z)) return;
-  if (p.job === 'deathgod' && p.deathSkills && Number(p.deathSkills.evadeUntil) > now) dmg = Math.max(1, Math.floor(dmg * 0.1));                // 마을 안에서는 어떤 공격도 무효
+  dmg = Math.max(1, Math.floor(dmg * dmgTakenMult(p, now)));   // 죽음의 회피: 받는 피해 x0.1
   if ((p.invTill || 0) > now) return;          // 대쉬/무적 중이면 회피 성공
   p.invTill = now + 400;
   const w = wsById.get(p.id);
@@ -786,7 +923,7 @@ function tickMonsters(dt, now) {
         tgt.invTill = now + 500;
         m.atk = 1;
         const w = wsById.get(tgt.id);
-        if (w && w.readyState === WebSocket.OPEN) { try { w.send(JSON.stringify({ type: 'mdmg', id: m.id, dmg: d.dmg, mt: m.type })); } catch {} }
+        if (w && w.readyState === WebSocket.OPEN) { try { w.send(JSON.stringify({ type: 'mdmg', id: m.id, dmg: Math.max(1, Math.floor(d.dmg * dmgTakenMult(tgt, now))), mt: m.type })); } catch {} }
       }
     } else if (!m.kx && !m.kz) {
       const rt = m._ret || m.home;
@@ -927,10 +1064,10 @@ function ensurePlayer(key){
   p.rcoin=Math.max(0,Math.min(1e9,Math.floor(p.rcoin)));
   if(typeof p.title!=='string') p.title='';
   if(!p.deathSkills||typeof p.deathSkills!=='object') p.deathSkills={};
-  p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul};
+  p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul,evadeCd:Math.max(0,Math.floor(Number(p.deathSkills.evadeCd)||0))};
   p.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives==null?2:p.deathLives)||0)));
   p.deathReborn=!!p.deathReborn;
-  if(p.rebirth>=500){p.job='deathgod';p.deathLives=Math.max(1,p.deathLives);}
+  p.deathCutsceneDone=!!p.deathCutsceneDone; if(p.rebirth>=500){p.job='deathgod';}
   if(!p.bank||typeof p.bank!=='object') p.bank={coin:0,items:{}};
   if(typeof p.bank.coin!=='number'||!Number.isFinite(p.bank.coin)) p.bank.coin=0;
   if(!p.bank.items||typeof p.bank.items!=='object') p.bank.items={};
@@ -951,6 +1088,44 @@ function ensurePlayer(key){
     p.rbMult[k]=Math.max(0,Math.min(30,Math.floor(p.rbMult[k])));
   }
   return p;
+}
+// ===== 저장 데이터 보강: 알려지지 않은 클라이언트 필드도 (크기 제한 안에서) MongoDB 에 보존 =====
+const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+const KNOWN_PLAYER_KEYS = new Set(['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg','pot','ow','oa','sw','items','qa','qd','questProgress','godUnlocked','hadesSword','godQuestAccepted','godQuestDone','job','msUnlocked','jstep','jm','jhp','we','ae','rebirth','rcoin','title','deathSkills','deathLives','deathReborn','deathCutsceneDone','talents','talentPts','runes','runeEq','towerBest','towerDaily','towerDailyAt','rstat','rbMult','sbk','sks','look','bank','stats','guild','party']);
+function cleanExtraVal(v, depth) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.max(-1e12, Math.min(1e12, v)) : undefined;
+  if (typeof v === 'string') return v.slice(0, 200);
+  if (depth >= 3 || v === null || typeof v !== 'object') return undefined;
+  if (Array.isArray(v)) { const a = []; for (const x of v.slice(0, 100)) { const c = cleanExtraVal(x, depth + 1); if (c !== undefined) a.push(c); } return a; }
+  const o = {}; let n = 0;
+  for (const [k, x] of Object.entries(v)) {
+    if (n >= 50) break;
+    if (!SAFE_KEY.test(k) || k === 'constructor' || k === 'prototype') continue;
+    const c = cleanExtraVal(x, depth + 1); if (c !== undefined) { o[k] = c; n++; }
+  }
+  return o;
+}
+function copyExtraPlayerFields(p, player) {
+  let n = 0, size = 0;
+  for (const [k, v] of Object.entries(p)) {
+    if (n >= 60) break;
+    if (KNOWN_PLAYER_KEYS.has(k) || !SAFE_KEY.test(k) || k === 'constructor' || k === 'prototype') continue;
+    const c = cleanExtraVal(v, 0); if (c === undefined) continue;
+    const s = JSON.stringify(c).length; if (size + s > 20000) continue;
+    size += s; player[k] = c; n++;
+  }
+}
+// 서버가 권한을 가진 값(환생 횟수, 죽음의 신 상태)은 클라이언트의 오래된 저장본이 덮어쓰지 못하게 한다
+function keepServerAuth(prev, np) {
+  if (!prev || !np) return;
+  if ((prev.rebirth | 0) > (np.rebirth | 0)) np.rebirth = prev.rebirth | 0;
+  if (prev.deathSkills && typeof prev.deathSkills === 'object') np.deathSkills = Object.assign({}, prev.deathSkills);
+  if (prev.deathLives != null) np.deathLives = prev.deathLives;
+  if (prev.deathReborn) np.deathReborn = true;
+  if (prev.deathCutsceneDone) np.deathCutsceneDone = true;
+  if (!np.title && prev.title) np.title = prev.title;
+  if ((np.rebirth | 0) >= DEATH_REBIRTH) np.job = 'deathgod';
 }
 function cleanState(input){
  if(!input||typeof input!=='object'||Array.isArray(input))return null;
@@ -1009,7 +1184,7 @@ function cleanState(input){
  if(Number.isFinite(Number(p.rebirth))) player.rebirth=Math.max(0,Math.min(1000000,Math.floor(Number(p.rebirth))));
  if(Number.isFinite(Number(p.rcoin))) player.rcoin=Math.max(0,Math.min(1e9,Math.floor(Number(p.rcoin))));
  if(typeof p.title==='string') player.title=String(p.title).slice(0,24);
- if(p.deathSkills&&typeof p.deathSkills==='object'&&!Array.isArray(p.deathSkills)){const ds=p.deathSkills;player.deathSkills={guide:!!ds.guide,scythe:!!ds.scythe,evadeUntil:Math.max(0,Math.floor(Number(ds.evadeUntil)||0)),spears:!!ds.spears,soul:!!ds.soul};}
+ if(p.deathSkills&&typeof p.deathSkills==='object'&&!Array.isArray(p.deathSkills)){const ds=p.deathSkills;player.deathSkills={guide:!!ds.guide,scythe:!!ds.scythe,evadeUntil:Math.max(0,Math.floor(Number(ds.evadeUntil)||0)),spears:!!ds.spears,soul:!!ds.soul,evadeCd:Math.max(0,Math.floor(Number(ds.evadeCd)||0))};}
  if(Number.isFinite(Number(p.deathLives))) player.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives))));
  if(p.deathReborn===true) player.deathReborn=true;
  if(Number(p.rebirth)>=500){player.job='deathgod';player.deathLives=Math.max(1,player.deathLives==null?2:player.deathLives);}
@@ -1033,6 +1208,8 @@ function cleanState(input){
  if(Array.isArray(p.sbk)) player.sbk=p.sbk.filter(v=>typeof v==='string'&&/^[A-Za-z0-9_]{1,32}$/.test(v)).slice(0,60);
  if(Array.isArray(p.sks)) player.sks=p.sks.filter(v=>typeof v==='string'&&v.length>0&&v.length<=24).slice(0,8);
  if(p.look&&typeof p.look==='object'&&!Array.isArray(p.look)){const lk={};for(const k of['skin','hair','hs','hat','cape','wing','halo','glass','aura','shirt','pants','boot','face','tail']){const v=Number(p.look[k]);if(Number.isFinite(v)&&v>=0&&v<=0xffffff)lk[k]=Math.floor(v);}player.look=lk;}
+ if(p.deathCutsceneDone===true) player.deathCutsceneDone=true;
+ copyExtraPlayerFields(p,player);
  const camera={};if(c&&typeof c==='object'){for(const k of ['yaw','pit','dist'])if(Number.isFinite(c[k]))camera[k]=Math.max(-1000,Math.min(1000,c[k]));}
  return {version:1,player,camera,savedAt:Date.now()};
 }
@@ -1056,9 +1233,9 @@ app.post('/api/login',authLimiter,(req,res)=>{
  if(!u||!safeEqual(actual,expected))return res.status(401).json({error:'아이디 또는 비밀번호가 올바르지 않습니다.'});
  if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});
  const token=newToken(key);cookie(req,res,token);
- res.json({user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,token});
+ if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,token});
 });
-app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);res.json({user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,token});});
+app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,token});});
 app.post('/api/save',requireUser,(req,res)=>{
   const state=cleanState(req.body&&req.body.state);
   if(!state)return res.status(400).json({error:'저장 데이터 형식이 올바르지 않습니다.'});
@@ -1102,11 +1279,12 @@ app.post('/api/save',requireUser,(req,res)=>{
     if(prev.rcoin!=null && state.player.rcoin==null) state.player.rcoin=prev.rcoin;
     if(prev.rebirth!=null && state.player.rebirth==null) state.player.rebirth=prev.rebirth;
   }
+  keepServerAuth(prev, state.player);
   db.states[req.userKey]=state;
   persistSoon();
   res.json({ok:true,savedAt:state.savedAt});
 });
-app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv){if(pv.bank)state.player.bank=pv.bank;if(typeof pv.coin==='number'&&typeof state.player.coin==='number'&&pv.coin>state.player.coin)state.player.coin=pv.coin;if((pv.rcoin|0)>(state.player.rcoin|0))state.player.rcoin=pv.rcoin|0;if((pv.rstat|0)>(state.player.rstat|0))state.player.rstat=pv.rstat|0;}}db.states[key]=state;persistSoon();res.status(204).end();});
+app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv){if(pv.bank)state.player.bank=pv.bank;if(typeof pv.coin==='number'&&typeof state.player.coin==='number'&&pv.coin>state.player.coin)state.player.coin=pv.coin;if((pv.rcoin|0)>(state.player.rcoin|0))state.player.rcoin=pv.rcoin|0;if((pv.rstat|0)>(state.player.rstat|0))state.player.rstat=pv.rstat|0;}}keepServerAuth(db.states[key]&&db.states[key].player,state.player);db.states[key]=state;persistSoon();res.status(204).end();});
 app.post('/api/logout',(req,res)=>{clearCookie(req,res);res.json({ok:true});});
 
 app.post('/api/buy', requireUser, (req, res) => {
@@ -1283,6 +1461,24 @@ app.post('/api/admin/magesword', requireAdmin, (req,res)=>{
   res.json({ok:true,username:db.users[key].username,online,job:p.job,msUnlocked:true,godUnlocked:true});
 });
 
+app.post('/api/admin/set-rebirth', requireAdmin, (req,res)=>{
+  const {username, rebirth} = req.body||{};
+  if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
+  const rb=Math.floor(Number(rebirth));
+  if(!Number.isFinite(rb)||rb<0||rb>1e6) return res.status(400).json({error:'환생 횟수가 올바르지 않습니다.'});
+  const key=usernameKey(username);
+  if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
+  const p=ensurePlayer(key); const prev=p.rebirth|0; p.rebirth=rb;
+  if(rb>=DEATH_REBIRTH){
+    if(prev<DEATH_REBIRTH){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0}; p.deathCutsceneDone=false; }
+    p.title='죽음의 신';
+  } else if(prev>=DEATH_REBIRTH && p.job==='deathgod'){ p.job=''; p.deathCutsceneDone=false; }
+  db.states[key].savedAt=Date.now();
+  try{persist();}catch(e){}
+  const first = rb>=DEATH_REBIRTH ? awakenDeathGod(key,p) : false;
+  if(rb<DEATH_REBIRTH) pushDeathState(key);
+  res.json({ok:true, username:db.users[key].username, rebirth:p.rebirth, job:p.job, deathAwakened:first});
+});
 app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
   const {username, amount} = req.body||{};
   if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
@@ -1824,7 +2020,8 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   // 예: 환생0 + Lv100 → 환생 +2
   const lvNow = p.lv|0;
   const rbGain = Math.max(1, Math.floor(lvNow / 50));
-  p.rebirth = (p.rebirth|0) + rbGain;
+  const prevRb = p.rebirth|0;
+  p.rebirth = prevRb + rbGain;
   // 기본 보상(환생 1회분) * rbGain * rbMult
   // 환생 코인 1회분 = 5 * 현재환생횟수(증가 후 기준 평균 대용으로 증가분 합산)
   let rcoinBase = 0;
@@ -1854,7 +2051,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.pot = [2, 0, 0, 0];
   if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
   p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
-  if(p.rebirth >= 500){ p.job='deathgod'; p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false}; p.title='죽음의 신'; }
+  if(p.rebirth >= 500){ p.job='deathgod'; if(prevRb < 500){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0}; } p.title='죽음의 신'; }
   // 환생해도 누적된 최대 체력/환생 스탯 보너스는 유지
   p.mhp = Math.max(100, Math.floor(Number(p.mhp)||100));
   p.hp = p.mhp;
@@ -1862,8 +2059,9 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); } catch(e) {}
   pushAdminStat(req.userKey, { lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin });
+  const deathAwakened = awakenDeathGod(req.userKey, p);   // 500회 달성 시 컷씬 + 전직 (최초 1회)
   res.json({
-    ok:true, rebirth:p.rebirth, rbGain, rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
+    ok:true, rebirth:p.rebirth, rbGain, job:p.job, deathAwakened, cutscene:deathAwakened, deathSkills:p.deathSkills, deathLives:p.deathLives, death:deathInfo(req.userKey), rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
     rcoinGain, rstatGain,
     lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts,
     coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, sw:p.sw, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
@@ -2294,11 +2492,15 @@ wss.on('connection',ws=>{
   const id=crypto.randomUUID();
   // 회원가입/로그인 닉네임이 있으면 그 이름, 없으면 익명
   const displayName = ws._username || ('플레이어-'+id.slice(0,4));
-  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:''};
+  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:'', soul:false, sp:false};
   { const gg=ws._userKey?guildOfKey(ws._userKey):null; p.gn=gg?gg.name:''; }
   Object.defineProperty(p,'invTill',{value:0,writable:true,enumerable:false});   // 서버 전용(브로드캐스트 제외)
   Object.defineProperty(p,'party',{value:null,writable:true,enumerable:false});
   Object.defineProperty(p,'key',{value:ws._userKey||null,writable:true,enumerable:false});
+  Object.defineProperty(p,'baseDmg',{value:0,writable:true,enumerable:false});     // 클라가 보고한 기본 공격력(bd)
+  Object.defineProperty(p,'lastHit',{value:0,writable:true,enumerable:false});
+  Object.defineProperty(p,'wasAlive',{value:false,writable:true,enumerable:false});
+  Object.defineProperty(p,'reviveUntil',{value:0,writable:true,enumerable:false});
   // 같은 계정의 기존 접속은 종료 (내 캐릭터가 복제되어 보이는 현상 방지)
   if(ws._userKey){
     for(const o of wss.clients){
@@ -2324,6 +2526,10 @@ wss.on('connection',ws=>{
     monsters: monsterSnapshot()
   }));
   { const gg=ws._userKey?guildOfKey(ws._userKey):null; if(gg){ try{ws.send(JSON.stringify({type:'guild',g:guildInfo(gg,ws._userKey)}));}catch{} } }
+  { const dst=(p.key&&db.states[p.key]&&db.states[p.key].player)?ensurePlayer(p.key):null;
+    if(dst&&(dst.rebirth|0)>=DEATH_REBIRTH){ p.job='deathgod'; p.soul=!!(dst.deathSkills&&dst.deathSkills.soul); p.sp=!!(dst.deathSkills&&dst.deathSkills.spears);
+      try{ws.send(JSON.stringify(deathStateMsg(dst,Date.now())));}catch{}
+      awakenDeathGod(p.key,dst); } }
   broadcast({type:'join', player:p}, ws);
 
   ws.on('pong',()=>ws.isAlive=true);
@@ -2348,7 +2554,12 @@ wss.on('connection',ws=>{
       if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
       if(typeof m.hadesSword==='boolean') p.hadesSword=m.hadesSword;
       if(typeof m.godUnlocked==='boolean') p.godUnlocked=m.godUnlocked;
-      if(m.inv) p.invTill=Math.max(p.invTill||0,now+150);   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
+      if(Number.isFinite(m.bd)&&m.bd>0) p.baseDmg=Math.min(1e9,m.bd);   // 죽음의 창 데미지 기준(내 1회 공격 데미지)
+      const dsx=deathSt(p);
+      if(dsx) p.job='deathgod';
+      if(m.inv && !(dsx&&dsx.deathSkills&&dsx.deathSkills.soul)) p.invTill=Math.max(p.invTill||0,now+150);   // 영혼 모드는 대쉬 불가
+      if(p.hp>0) p.wasAlive=true;
+      else if(p.wasAlive){ p.wasAlive=false; if(dsx) deathLifeCheck(p,ws,dsx,now); }   // 목숨 패시브   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
       // 원격 애니메이션용 필드 전달
       p.atk = m.atk ? 1 : 0;
       if(Number.isFinite(m.shirt)) p.shirt = Math.floor(m.shirt) & 0xffffff;
@@ -2368,13 +2579,33 @@ wss.on('connection',ws=>{
       const dist=Math.hypot(targetPlayer.x-p.x, targetPlayer.z-p.z);
       if(dist>8) return;
       if(inSafeAny(p.x,p.z)||inSafeAny(targetPlayer.x,targetPlayer.z)) return;
-      const dmg=Math.max(1,Math.min(500,Math.floor(m.dmg)));
+      const dmg=Math.max(1,Math.floor(Math.max(1,Math.min(500,Math.floor(m.dmg)))*dmgTakenMult(targetPlayer,now)));
       targetPlayer.hp=Math.max(0,(targetPlayer.hp||100)-dmg);
       broadcastAll({type:'pvp_damage', from:p.id, to:targetPlayer.id, dmg, hp:targetPlayer.hp, name:p.name});
       return;
     }
 
         // ---------- 플레이어 목록 / 파티 / 채팅 (서버 권한) ----------
+    if(m.type==='death_skill'){
+      const st=deathSt(p); if(!st) return msgTo(p.id,'죽음의 신만 사용할 수 있어요.');
+      if(now-(ws._dsT||0)<150) return; ws._dsT=now;
+      const sk=DEATH_SKILL_IDS[String(m.skill)]; if(!sk) return;
+      if(!st.deathSkills||typeof st.deathSkills!=='object') st.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,evadeCd:0};
+      const ds=st.deathSkills;
+      if(sk==='evade'){
+        if((Number(ds.evadeCd)||0)>now){ msgTo(p.id,'죽음의 회피 쿨타임 '+Math.ceil(((Number(ds.evadeCd)||0)-now)/1000)+'초'); pushDeathState(p.key); return; }
+        ds.evadeUntil=now+DEATH_EVADE_MS; ds.evadeCd=now+DEATH_EVADE_CD;
+      } else {
+        ds[sk]=(typeof m.on==='boolean')?m.on:!ds[sk];
+        if(sk==='spears') p.sp=!!ds.spears;
+        if(sk==='soul') p.soul=!!ds.soul;
+      }
+      if(db.states[p.key]) db.states[p.key].savedAt=Date.now();
+      persistSoon();
+      pushDeathState(p.key);
+      broadcast({type:'state',player:p},ws);
+      return;
+    }
     if(m.type==='plist'){
       if(now-(ws._plT||0)<700) return; ws._plT=now;
       const list=[...players.values()].map(q=>({id:q.id,name:q.name,lv:q.lv||1,job:q.job||'',gn:q.gn||'',inParty:q.party?1:0,self:q.id===p.id?1:0}));
@@ -2565,6 +2796,7 @@ if(m.type==='chat'){
   });
 
   ws.on('close',()=>{
+    persistSoon();
     try{ partyLeave(p,''); invites.delete(p.id); for(const [to,iv] of invites) if(iv.from===p.id) invites.delete(to); }catch{}
     players.delete(p.id); wsById.delete(p.id);
     broadcast({type:'leave',id:p.id});
@@ -2582,7 +2814,7 @@ if(m.type==='chat'){
 let lastTick=Date.now();
 setInterval(()=>{
   const now=Date.now(), dt=Math.min(0.25,(now-lastTick)/1000); lastTick=now;
-  try{ tickMonsters(dt,now); broadcastMonsters(); }catch(e){ console.error('monster tick error:',e); }
+  try{ tickMonsters(dt,now); tickDeath(now); broadcastMonsters(); }catch(e){ console.error('monster tick error:',e); }
 },100);
 
 setInterval(()=>{ try{ for(const pt of parties.values()) pushParty(pt); }catch(e){ console.error('party tick error:',e); } },1000);
