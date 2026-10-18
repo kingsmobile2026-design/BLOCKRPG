@@ -504,7 +504,7 @@ function killMonster(m, d, p) {
             if (rewardXp > 0) player.xp = (player.xp || 0) + rewardXp;
             if (db.states[w._userKey]) db.states[w._userKey].savedAt = Date.now();
           } catch (_) {}
-          bumpStat(w._userKey, 'kills', 1); if (d.boss) bumpStat(w._userKey, 'boss', 1);
+          bumpStat(w._userKey, 'kills', 1); if(m.type==='slime') bumpStat(w._userKey,'slimeKills',1); if (d.boss) bumpStat(w._userKey, 'boss', 1);
           const g = guildOfKey(w._userKey);
           if (g) addGuildExp(g, w._userKey, Math.min(2000, Math.max(1, Math.floor((d.xp || 0) / 25))));
           if (d.boss) tryDropRune(w, m, d);
@@ -1074,6 +1074,9 @@ function ensurePlayer(key){
   if(typeof p.rcoin!=='number'||!Number.isFinite(p.rcoin)) p.rcoin=0;
   p.rcoin=Math.max(0,Math.min(1e9,Math.floor(p.rcoin)));
   if(typeof p.title!=='string') p.title='';
+  if(!Array.isArray(p.achievementIds)) p.achievementIds=[];
+  if(!Array.isArray(p.unlockedTitles)) p.unlockedTitles=[];
+  if(typeof p.equippedTitle!=='string') p.equippedTitle='';
   if(!p.deathSkills||typeof p.deathSkills!=='object') p.deathSkills={};
   p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul,evadeCd:Math.max(0,Math.floor(Number(p.deathSkills.evadeCd)||0))};
   p.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives==null?2:p.deathLives)||0)));
@@ -1102,7 +1105,7 @@ function ensurePlayer(key){
 }
 // ===== 저장 데이터 보강: 알려지지 않은 클라이언트 필드도 (크기 제한 안에서) MongoDB 에 보존 =====
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
-const KNOWN_PLAYER_KEYS = new Set(['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg','pot','ow','oa','sw','items','qa','qd','questProgress','godUnlocked','hadesSword','godQuestAccepted','godQuestDone','job','msUnlocked','jstep','jm','jhp','we','ae','rebirth','rcoin','title','deathSkills','deathLives','deathReborn','deathCutsceneDone','talents','talentPts','runes','runeEq','towerBest','towerDaily','towerDailyAt','rstat','rbMult','sbk','sks','look','bank','stats','guild','party']);
+const KNOWN_PLAYER_KEYS = new Set(['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg','pot','ow','oa','sw','items','qa','qd','questProgress','godUnlocked','hadesSword','godQuestAccepted','godQuestDone','job','msUnlocked','jstep','jm','jhp','we','ae','rebirth','rcoin','title','achievementIds','unlockedTitles','equippedTitle','deathSkills','deathLives','deathReborn','deathCutsceneDone','talents','talentPts','runes','runeEq','towerBest','towerDaily','towerDailyAt','rstat','rbMult','sbk','sks','look','bank','stats','guild','party']);
 function cleanExtraVal(v, depth) {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return Number.isFinite(v) ? Math.max(-1e12, Math.min(1e12, v)) : undefined;
@@ -1998,22 +2001,31 @@ const TALENT_DEFS = {
   util_loot: {tree:'util',max:3, cost:2, name:'행운'}
 };
 const RUNE_POOL = [
-  {id:'r_crit', name:'치명 룬', opt:'crit', val:5, slot:'w'},
-  {id:'r_atk', name:'강타 룬', opt:'atk', val:8, slot:'w'},
-  {id:'r_fire', name:'화염 룬', opt:'fire', val:12, slot:'w'},
-  {id:'r_hp', name:'생명 룬', opt:'hp', val:40, slot:'a'},
-  {id:'r_dr', name:'수호 룬', opt:'dr', val:4, slot:'a'},
-  {id:'r_cd', name:'신속 룬', opt:'cd', val:6, slot:'u'},
-  {id:'r_spd', name:'질주 룬', opt:'spd', val:8, slot:'u'},
-  {id:'r_lifesteal', name:'흡혈 룬', opt:'ls', val:3, slot:'w'},
-  {id:'r_shield', name:'보호 룬', opt:'shield', val:1, slot:'a'},
-  {id:'r_exp', name:'경험 룬', opt:'exp', val:10, slot:'u'}
+  {id:'r_crit',name:'치명 룬',opt:'crit',val:5,slot:'w'}, {id:'r_atk',name:'강타 룬',opt:'atk',val:8,slot:'w'},
+  {id:'r_fire',name:'화염 룬',opt:'fire',val:12,slot:'w'}, {id:'r_ice',name:'빙결 룬',opt:'ice',val:8,slot:'w'},
+  {id:'r_thunder',name:'번개 룬',opt:'thunder',val:10,slot:'w'}, {id:'r_boss',name:'학살 룬',opt:'boss',val:7,slot:'w'},
+  {id:'r_lifesteal',name:'흡혈 룬',opt:'ls',val:3,slot:'w'}, {id:'r_execute',name:'처형 룬',opt:'execute',val:4,slot:'w'},
+  {id:'r_hp',name:'생명 룬',opt:'hp',val:40,slot:'a'}, {id:'r_dr',name:'수호 룬',opt:'dr',val:4,slot:'a'},
+  {id:'r_shield',name:'보호 룬',opt:'shield',val:1,slot:'a'}, {id:'r_reflect',name:'반사 룬',opt:'reflect',val:5,slot:'a'},
+  {id:'r_regen',name:'재생 룬',opt:'regen',val:2,slot:'a'}, {id:'r_resist',name:'저항 룬',opt:'resist',val:6,slot:'a'},
+  {id:'r_cd',name:'신속 룬',opt:'cd',val:6,slot:'u'}, {id:'r_spd',name:'질주 룬',opt:'spd',val:8,slot:'u'},
+  {id:'r_exp',name:'경험 룬',opt:'exp',val:10,slot:'u'}, {id:'r_gold',name:'황금 룬',opt:'gold',val:8,slot:'u'},
+  {id:'r_luck',name:'행운 룬',opt:'luck',val:5,slot:'u'}, {id:'r_drop',name:'탐욕 룬',opt:'drop',val:6,slot:'u'},
+  {id:'r_tower',name:'시련 룬',opt:'tower',val:5,slot:'u'}, {id:'r_dash',name:'질풍 룬',opt:'dash',val:10,slot:'u'}
+];
+const RUNE_TIERS = [
+  {tier:1,name:'일반',mult:1,weight:55,color:'#b9c0ca'},
+  {tier:2,name:'고급',mult:1.35,weight:25,color:'#5bd17b'},
+  {tier:3,name:'희귀',mult:1.8,weight:13,color:'#4da6ff'},
+  {tier:4,name:'영웅',mult:2.5,weight:6,color:'#bf7bff'},
+  {tier:5,name:'신화',mult:4,weight:1,color:'#ffbd45'}
 ];
 function genRuneId(){ return 'R'+crypto.randomBytes(4).toString('hex'); }
 function rollRune(){
-  const base = RUNE_POOL[(Math.random()*RUNE_POOL.length)|0];
-  const mult = Math.random()<.12 ? 1.5 : Math.random()<.35 ? 1.25 : 1;
-  return { id: genRuneId(), base: base.id, name: base.name, opt: base.opt, val: Math.round(base.val*mult), slot: base.slot, tier: mult>=1.5?3:mult>=1.25?2:1 };
+  const base=RUNE_POOL[(Math.random()*RUNE_POOL.length)|0];
+  const roll=Math.random()*100; let sum=0,t=RUNE_TIERS[0];
+  for(const x of RUNE_TIERS){sum+=x.weight;if(roll<sum){t=x;break;}}
+  return {id:genRuneId(),base:base.id,name:base.name,opt:base.opt,val:Math.max(1,Math.round(base.val*t.mult)),slot:base.slot,tier:t.tier,tierName:t.name,color:t.color};
 }
 function talentSpent(talents){
   let s=0; for(const [k,v] of Object.entries(talents||{})){ const d=TALENT_DEFS[k]; if(d) s+=(v|0)*d.cost; }
@@ -2275,6 +2287,32 @@ function tryDropRune(ws, m, d) {
   try { ws.send(JSON.stringify({ type: 'rune_drop', rune })); } catch {}
 }
 
+// 업적과 칭호: 해금 조건과 보상은 서버가 판정한다.
+const ACHIEVEMENTS=[
+ {id:'slime_100',name:'슬라임 학살자',desc:'슬라임 100마리 처치',title:'슬라임 학살자',coin:500,xp:250,ok:(p,st)=>((st.slimeKills|0)>=100)},
+ {id:'kills_1000',name:'천인 참살',desc:'몬스터 1,000마리 처치',title:'천인 참살자',coin:2500,xp:1200,ok:(p,st)=>((st.kills|0)>=1000)},
+ {id:'level_100',name:'한계 돌파',desc:'레벨 100 달성',title:'한계 돌파자',coin:5000,xp:0,ok:p=>((p.lv|0)>=100)},
+ {id:'boss_25',name:'보스 사냥꾼',desc:'보스 25마리 처치',title:'보스 사냥꾼',coin:3000,xp:1500,ok:(p,st)=>((st.boss|0)>=25)},
+ {id:'tower_10',name:'탑의 개척자',desc:'무한의 탑 10층 클리어',title:'탑의 개척자',coin:2000,xp:1000,ok:p=>((p.towerBest|0)>=10)},
+ {id:'tower_50',name:'천공의 도전자',desc:'무한의 탑 50층 클리어',title:'천공의 도전자',coin:10000,xp:5000,ok:p=>((p.towerBest|0)>=50)},
+ {id:'legend_gear',name:'전설의 수집가',desc:'고등급 무기 보유',title:'전설의 수집가',coin:1500,xp:500,ok:p=>Math.max(...(Array.isArray(p.ow)?p.ow:[0]).map(Number),Number(p.w)||0)>=20}
+];
+app.get('/api/achievements',requireUser,(req,res)=>{
+ const p=ensurePlayer(req.userKey),u=db.users[req.userKey]||{},st=u.stats||{};
+ if(!Array.isArray(p.achievementIds))p.achievementIds=[]; if(!Array.isArray(p.unlockedTitles))p.unlockedTitles=[];
+ let changed=false;
+ for(const a of ACHIEVEMENTS){if(!p.achievementIds.includes(a.id)&&a.ok(p,st)){p.achievementIds.push(a.id);if(!p.unlockedTitles.includes(a.title))p.unlockedTitles.push(a.title);p.coin=(p.coin|0)+a.coin;p.xp=(p.xp|0)+a.xp;changed=true;}}
+ if(changed){db.states[req.userKey].savedAt=Date.now();try{persist();}catch{}}
+ res.json({achievements:ACHIEVEMENTS.map(a=>({...a,ok:undefined,unlocked:p.achievementIds.includes(a.id)})),unlockedTitles:p.unlockedTitles,equippedTitle:p.equippedTitle||'',coin:p.coin|0,xp:p.xp|0});
+});
+app.post('/api/title/equip',requireUser,(req,res)=>{
+ const p=ensurePlayer(req.userKey),title=String(req.body&&req.body.title||'').slice(0,32);
+ if(title&&!((p.unlockedTitles||[]).includes(title))&&title!==(p.title||''))return res.status(400).json({error:'아직 해금하지 않은 칭호입니다.'});
+ p.equippedTitle=title;db.states[req.userKey].savedAt=Date.now();try{persist();}catch{}
+ for(const live of players.values())if(live.key===req.userKey)live.title=title;
+ res.json({ok:true,equippedTitle:title,unlockedTitles:p.unlockedTitles||[]});
+});
+
 // 무한의 탑
 const towerSessions = new Map(); // userKey -> { floor, started, killsNeed, kills, boss }
 function towerScale(floor) {
@@ -2294,14 +2332,15 @@ app.post('/api/tower/enter', requireUser, (req, res) => {
   const floor = Math.max(1, Math.min((p.towerBest|0)+1, Math.floor(Number(req.body&&req.body.floor)||1)));
   if (floor > (p.towerBest|0)+1) return res.status(400).json({ error: '아직 도전할 수 없는 층입니다.', max: (p.towerBest|0)+1 });
   const sc = towerScale(floor);
-  const sess = { floor, started: Date.now(), killsNeed: sc.boss ? 1 : sc.n, kills: 0, boss: !!sc.boss, sc };
+  const started=Date.now(); const timeLimitMs=Math.max(60000,180000-Math.min(90000,(floor-1)*1000));
+  const sess = { floor, started, deadline:started+timeLimitMs, timeLimitMs, killsNeed: sc.boss ? 1 : sc.n, kills: 0, boss: !!sc.boss, sc };
   towerSessions.set(req.userKey, sess);
-  res.json({ ok:true, floor, ...sc, killsNeed: sess.killsNeed });
+  res.json({ ok:true, floor, ...sc, killsNeed: sess.killsNeed, timeLimitMs:sess.timeLimitMs, deadline:sess.deadline });
 });
 app.post('/api/tower/kill', requireUser, (req, res) => {
   const sess = towerSessions.get(req.userKey);
   if (!sess) return res.status(400).json({ error: '탑에 입장하지 않았습니다.' });
-  if (Date.now() - sess.started > 600000) { towerSessions.delete(req.userKey); return res.status(400).json({ error: '세션 만료. 다시 입장하세요.' }); }
+  if (Date.now() > sess.deadline) { towerSessions.delete(req.userKey); return res.status(400).json({ error: '제한 시간 초과! 이번 층 도전이 종료되었습니다.' }); }
   // 초당 킬 제한
   const now = Date.now();
   if (!sess._kt) sess._kt = now;
@@ -2314,6 +2353,7 @@ app.post('/api/tower/kill', requireUser, (req, res) => {
 app.post('/api/tower/clear', requireUser, (req, res) => {
   const sess = towerSessions.get(req.userKey);
   if (!sess) return res.status(400).json({ error: '탑에 입장하지 않았습니다.' });
+  if(Date.now()>sess.deadline){towerSessions.delete(req.userKey);return res.status(400).json({error:'제한 시간 초과! 보상을 받을 수 없습니다.'});}
   if (sess.kills < sess.killsNeed) return res.status(400).json({ error: '아직 클리어 조건 미달', kills: sess.kills, need: sess.killsNeed });
   const p = ensurePlayer(req.userKey);
   const floor = sess.floor;
@@ -2327,6 +2367,17 @@ app.post('/api/tower/clear', requireUser, (req, res) => {
   // 다음 층 자동 입장 가능
   res.json({ ok:true, floor, coin: p.coin, xp: p.xp, towerBest: p.towerBest, reward: { coin: sc.coin, xp: sc.xp }, next: floor+1 });
 });
+app.get('/api/tower/ranking', requireUser, (req,res)=>{
+  const rows=[];
+  for(const [key,u] of Object.entries(db.users||{})){
+    if(u.isAdmin||u.banned||(db.bans&&db.bans[key]))continue;
+    const p=(db.states[key]&&db.states[key].player)||{};
+    rows.push({name:u.username||'모험가',floor:p.towerBest|0,rebirth:p.rebirth|0,lv:p.lv|0,mine:key===req.userKey?1:0});
+  }
+  rows.sort((a,b)=>b.floor-a.floor||b.rebirth-a.rebirth||b.lv-a.lv);
+  res.json({rows:rows.slice(0,50),mine:rows.findIndex(x=>x.mine===1)+1});
+});
+
 app.post('/api/tower/daily', requireUser, (req, res) => {
   const p = ensurePlayer(req.userKey);
   const day = Math.floor(Date.now()/86400000);
@@ -2347,7 +2398,7 @@ app.get('/api/tower/info', requireUser, (req, res) => {
   const p = ensurePlayer(req.userKey);
   const day = Math.floor(Date.now()/86400000);
   res.json({
-    towerBest: p.towerBest|0, rebirth: p.rebirth|0, rcoin: p.rcoin|0, rstat: p.rstat|0, rbMult: p.rbMult||{}, title: p.title||'',
+    towerBest: p.towerBest|0, rebirth: p.rebirth|0, rcoin: p.rcoin|0, rstat: p.rstat|0, rbMult: p.rbMult||{}, title: p.title||'', equippedTitle:p.equippedTitle||'', unlockedTitles:p.unlockedTitles||[], achievementIds:p.achievementIds||[],
     talentPts: Math.max(0, expectedTalentPts(p) - talentSpent(p.talents)),
     talents: p.talents||{}, runes: p.runes||[], runeEq: p.runeEq||{},
     dailyClaimed: (p.towerDailyAt|0)===day, nextFloor: (p.towerBest|0)+1,
@@ -2503,7 +2554,8 @@ wss.on('connection',ws=>{
   const id=crypto.randomUUID();
   // 회원가입/로그인 닉네임이 있으면 그 이름, 없으면 익명
   const displayName = ws._username || ('플레이어-'+id.slice(0,4));
-  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:'', soul:false, sp:false};
+  const savedPlayer=ws._userKey&&db.states[ws._userKey]&&db.states[ws._userKey].player;
+  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:'', soul:false, sp:false, title:savedPlayer&&savedPlayer.equippedTitle||''};
   { const gg=ws._userKey?guildOfKey(ws._userKey):null; p.gn=gg?gg.name:''; }
   Object.defineProperty(p,'invTill',{value:0,writable:true,enumerable:false});   // 서버 전용(브로드캐스트 제외)
   Object.defineProperty(p,'party',{value:null,writable:true,enumerable:false});
