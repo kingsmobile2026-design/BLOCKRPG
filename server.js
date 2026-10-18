@@ -265,15 +265,6 @@ Object.assign(WORLD.MT, {
 });
 Object.assign(WORLD.ZT, {zeus:'god'});
 WORLD.BOSS.zeus=[980,-1080];
-// 신(GOD) 지역 추가 몬스터 — 최상위 난이도 ★★★★★★★★
-Object.assign(WORLD.MT, {
-  cloudreaper:{hp:3800000,dmg:6800,xp:900000,g:480000,sp:7.5,reach:4.2,rt:20,sc:2.2,n:5,ag:42,cd:1.6,nm:'구름 사신'},
-  thunderknight:{hp:6200000,dmg:8200,xp:1400000,g:720000,sp:5.8,reach:4.0,rt:22,sc:2.6,n:4,ag:46,cd:1.8,nm:'천뢰 기사'},
-  astralserpent:{hp:8500000,dmg:9600,xp:1900000,g:950000,sp:8.2,reach:4.8,rt:24,sc:2.8,n:3,ag:50,cd:1.7,nm:'성천 뱀'},
-  godsentinel:{hp:72000000,dmg:12500,xp:12000000,g:6000000,sp:5.2,reach:9,rt:900,sc:5.2,n:1,ag:90,cd:2.1,boss:1,fix:[1030,-1130],nm:'신역 수호자'}
-});
-Object.assign(WORLD.ZT,{cloudreaper:'god',thunderknight:'god',astralserpent:'god',godsentinel:'god'});
-WORLD.BOSS.godsentinel=[1030,-1130];
 // ===== /신(GOD) 지역 =====
 
 // ===== 성운 지역 (신규 지역: 별빛 섬) =====
@@ -364,7 +355,7 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // 플레이어가 몬스터를 타격 (클라이언트가 보고한 피해량 — 거리/빈도/상한을 서버가 검증)
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
-const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200, godsentinel:1600 }
+const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200 };
 const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
