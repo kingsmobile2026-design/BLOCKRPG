@@ -157,7 +157,13 @@ const SHOP_W = [
   {name:'천상의 성검',cost:12000000},   // 21
   {name:'별빛 파멸검',cost:18000000},   // 22
   {name:'성역의 심판검',cost:22000000}, // 23
-  {name:'천계의 창',cost:26000000}      // 24 — 월드의 검(드롭) 바로 아래
+  {name:'천계의 창',cost:26000000},     // 24
+  {name:'성운의 별검',cost:42000000},   // 25 신규 천상 상인 무기
+  {name:'신들의 심판검',cost:24000000},  // 26 신기 상인
+  {name:'천뢰의 파멸검',cost:36000000},  // 27
+  {name:'창세의 신검',cost:44000000},    // 28
+  {name:'천상천하의 창',cost:52000000},  // 29
+  {name:'신성한 성운검',cost:84000000}     // 30: 성운의 별검 가격의 2배
 ];
 const SHOP_A = [
   null, // 0 천 옷
@@ -180,7 +186,11 @@ const SHOP_A = [
   {name:'천상의 갑옷',cost:10000000},   // 17
   {name:'별빛 갑옷',cost:15000000},     // 18
   {name:'성역의 갑옷',cost:20000000},   // 19
-  {name:'천계 수호갑',cost:25000000}    // 20 — 월드 갑옷급 바로 아래
+  {name:'천계 수호갑',cost:25000000},   // 20 — 월드 갑옷급 바로 아래
+  {name:'신들의 성갑',cost:20000000},     // 21 신기 상인
+  {name:'천뢰의 갑주',cost:30000000},     // 22
+  {name:'창세의 신갑',cost:40000000},     // 23
+  {name:'천상천하의 갑옷',cost:50000000} // 24
 ];
 const SHOP_P = [{name:'체력 물약',cost:15},{name:'고급 물약',cost:45},{name:'대형 물약',cost:120},{name:'엘릭서',cost:500}];
 const QUESTS = {
@@ -197,7 +207,12 @@ const QUESTS = {
   hxp2:{name:'빛의 정령 정화',need:15,coin:10000,xp:180000},
   hxp3:{name:'하급 천사의 시련',need:20,coin:15000,xp:300000},
   hxp4:{name:'천상 기사의 시련',need:15,coin:20000,xp:400000},
-  hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000}
+  hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000},
+  god_c1:{name:'구름 사신 토벌',need:5,coin:2400000,xp:4500000},
+  god_c2:{name:'천뢰 기사 격파',need:3,coin:3600000,xp:6500000},
+  god_c3:{name:'성천 뱀 사냥',need:2,coin:4800000,xp:8500000},
+  god_c4:{name:'신역 수호자 처치',need:1,coin:12000000,xp:18000000},
+  god_c5:{name:'제우스 토벌',need:1,coin:15000000,xp:22000000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
@@ -264,7 +279,29 @@ Object.assign(WORLD.MT, {
 });
 Object.assign(WORLD.ZT, {zeus:'god'});
 WORLD.BOSS.zeus=[980,-1080];
+// 신(GOD) 지역 추가 몬스터 — 최상위 난이도 ★★★★★★★★
+Object.assign(WORLD.MT, {
+  cloudreaper:{hp:3800000,dmg:6800,xp:900000,g:480000,sp:7.5,reach:4.2,rt:20,sc:2.2,n:5,ag:42,cd:1.6,nm:'구름 사신'},
+  thunderknight:{hp:6200000,dmg:8200,xp:1400000,g:720000,sp:5.8,reach:4.0,rt:22,sc:2.6,n:4,ag:46,cd:1.8,nm:'천뢰 기사'},
+  astralserpent:{hp:8500000,dmg:9600,xp:1900000,g:950000,sp:8.2,reach:4.8,rt:24,sc:2.8,n:3,ag:50,cd:1.7,nm:'성천 뱀'},
+  godsentinel:{hp:72000000,dmg:12500,xp:12000000,g:6000000,sp:5.2,reach:9,rt:900,sc:5.2,n:1,ag:90,cd:2.1,boss:1,fix:[1030,-1130],nm:'신역 수호자'}
+});
+Object.assign(WORLD.ZT,{cloudreaper:'god',thunderknight:'god',astralserpent:'god',godsentinel:'god'});
+WORLD.BOSS.godsentinel=[1030,-1130];
 // ===== /신(GOD) 지역 =====
+
+// ===== 성운 지역 (신규 지역: 별빛 섬) =====
+WORLD.ZD.nebula = [[1160,1420,-1510,-1240]];
+Object.assign(WORLD.MT, {
+  starguard:{hp:420000,dmg:3200,xp:180000,g:90000,sp:5.5,reach:3.2,rt:18,sc:1.7,n:8,ag:25,cd:1.7,nm:'별빛 수호자'},
+  nebulafox:{hp:360000,dmg:2800,xp:150000,g:75000,sp:8.5,reach:2.7,rt:14,sc:1.3,n:10,ag:24,cd:1.4,nm:'성운 여우'},
+  astralmage:{hp:520000,dmg:3900,xp:220000,g:110000,sp:4.8,reach:3.0,rt:16,sc:1.5,n:7,ag:28,cd:1.8,nm:'성운 마도사'},
+  astralguardian:{hp:4200000,dmg:6200,xp:1200000,g:650000,sp:4.5,reach:6.5,rt:360,sc:3.4,n:1,ag:36,cd:2,boss:1,fix:[1290,-1370],nm:'성운 수호왕'}
+});
+Object.assign(WORLD.ZT, {starguard:'nebula',nebulafox:'nebula',astralmage:'nebula',astralguardian:'nebula'});
+WORLD.BOSS.astralguardian=[1290,-1370];
+// ===== /성운 지역 =====
+
 // ===== /심연 지대 =====
 
 const ZONE_RECTS = WORLD.ZD;
@@ -341,7 +378,7 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // 플레이어가 몬스터를 타격 (클라이언트가 보고한 피해량 — 거리/빈도/상한을 서버가 검증)
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
-const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200 };
+const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200, godsentinel:1600 }
 const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
@@ -387,8 +424,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
-  m.shield = null; m.crystals = null; // 보스 쉴드 기능 제거
-  if (false && m.shield && m.shield.crystal) {   // 비활성화된 기존 쉴드 코드
+  if (m.shield && m.shield.crystal) {   // 월드보스 수정 쉴드: 수정을 부숴야 함
     if (Date.now() - (ws._shT || 0) > 800) {
       ws._shT = Date.now();
       try { ws.send(JSON.stringify({ type: 'shield_block', id: m.id, elem: 'all' })); } catch {}
@@ -396,7 +432,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     return;
   }
   // 원소 쉴드: 맞는 속성만 쉴드 파괴, 아니면 본체 피해 0
-  if (false && d.boss && m.shield && m.shield.hp > 0) {
+  if (d.boss && m.shield && m.shield.hp > 0) {
     const ok = elem && (elem === m.shield.elem || elem === 'all');
     if (!ok) {
       if (Date.now() - (ws._shT || 0) > 800) {
@@ -564,10 +600,9 @@ function tickBossGimmick(m, d, dt, now, alive) {
     m.groggy -= dt;
     if (m.groggy <= 0) { m.groggy = 0; m.crystals = null; sendNear(m.x, m.z, { type: 'groggy_end', id: m.id }); }
   }
-  m.shield = null;
-  if (m.crystals) { m.crystals = null; sendNear(m.x, m.z, {type:'cr_clear', id:m.id}); }
-  // 보스 쉴드/수정 기믹은 비활성화됨
-  if (false && (m.type === 'worldboss' || m.type === 'heavenlord')) {
+  maybeStartShield(m, d);
+  // 수정 쉴드 보스 (하데스 + 세라핌): HP 50% 이하에서 (1회) 수정 4개 + 쉴드
+  if (m.type === 'worldboss' || m.type === 'heavenlord') {
     if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
       m._wbDone = true;
       m.cast = null; m.floor = null;
@@ -704,6 +739,8 @@ function tickMonsters(dt, now) {
     }
     const ox = m.x, oz = m.z, ohp = m.hp, oface = m.face;
     m.cd -= dt; m.t += dt * 4;
+    // 빙결 중에는 넉백 이동도 정지시켜 공격/이동 상태가 재개되지 않도록 한다.
+    if (m.stun > 0) { m.kx = 0; m.kz = 0; }
     if (m.kx || m.kz) {
       m.x += m.kx * dt * 5; m.z += m.kz * dt * 5;
       const f = Math.pow(0.86, dt * 60); m.kx *= f; m.kz *= f;
@@ -743,7 +780,7 @@ function tickMonsters(dt, now) {
     // ★ 마검사 아이스볼: 스턴 중에는 이동·공격·스킬·쉴드 시전 불가 (월드보스는 면역)
     let stunned = false;
     if (m.stun > 0) {
-      if (m.type === 'worldboss' || m.type === 'heavenlord' || m.type === 'abysslord') m.stun = 0;
+      if (m.type === 'worldboss' || m.type === 'zeus') m.stun = 0;
       else { m.stun -= dt; if (m.stun > 0) stunned = true; else { m.stun = 0; m.ver++; } }
     }
     // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 2,000 감소
@@ -757,7 +794,7 @@ function tickMonsters(dt, now) {
       }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
-    const wbLock = false; // 보스 쉴드 제거
+    const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
     const casting = (d.boss && !wbLock && !stunned) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
     if (stunned) { m.cast = null; }
     else if (casting) { /* 보스 특수 패턴 시전 중 */ }
@@ -1118,9 +1155,10 @@ app.post('/api/quest/accept', requireUser, (req, res) => {
   const { questId } = req.body || {};
   if (typeof questId !== 'string' || !/^[A-Za-z0-9_-]{1,24}$/.test(questId)) return res.status(400).json({ error: '존재하지 않는 퀘스트입니다.' });
   const player = ensurePlayer(req.userKey);
-  if (player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
+  const repeatableGodQuest = questId.startsWith('god_') && !!QUESTS[questId];
+  if (!repeatableGodQuest && player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
   if (player.qa[questId] !== undefined) return res.status(400).json({ error: '이미 수락한 퀘스트입니다.' });
-  if (Object.keys(player.qa).length >= 5) return res.status(400).json({ error: '퀘스트는 동시에 5개까지 받을 수 있습니다.' });
+  if (!repeatableGodQuest && Object.keys(player.qa).length >= 5) return res.status(400).json({ error: '퀘스트는 동시에 5개까지 받을 수 있습니다.' });
   player.qa[questId] = 0; player.questProgress[questId] = 0;
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); res.json({ ok:true, questId, qa:player.qa }); } catch(e){ res.status(500).json({ error:'저장 실패' }); }
@@ -1143,7 +1181,8 @@ app.post('/api/quest/complete', requireUser, (req, res) => {
   if (typeof questId !== 'string' || !/^[A-Za-z0-9_-]{1,24}$/.test(questId)) return res.status(400).json({ error: '존재하지 않는 퀘스트입니다.' });
   const player = ensurePlayer(req.userKey);
   if (player.qa[questId] === undefined) return res.status(400).json({ error: '수락하지 않은 퀘스트입니다.' });
-  if (player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
+  const repeatableGodQuest = questId.startsWith('god_') && !!QUESTS[questId];
+  if (!repeatableGodQuest && player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
   const def = QUESTS[questId];
   const needN = def ? def.need : (Number.isInteger(need) ? Math.min(100000, Math.max(1, need)) : 1);
   const coinR = def ? def.coin : Math.max(0, Math.min(1e7, Math.floor(Number(rewardCoin) || 0)));
@@ -1153,7 +1192,7 @@ app.post('/api/quest/complete', requireUser, (req, res) => {
   player.coin = (player.coin || 0) + coinR;
   player.xp = (player.xp || 0) + xpR;
   delete player.qa[questId];
-  if (!player.qd.includes(questId)) player.qd.push(questId);
+  if (!repeatableGodQuest && !player.qd.includes(questId)) player.qd.push(questId);
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); res.json({ ok:true, questId, reward:{coin:coinR,xp:xpR}, coin:player.coin, xp:player.xp, qa:player.qa, qd:player.qd }); }
   catch(e){ res.status(500).json({ error:'저장 실패' }); }
@@ -1224,28 +1263,34 @@ app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
   pushAdminStat(key, {lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin});
   res.json({ok:true, username:db.users[key].username, lv:p.lv, coin:p.coin, mhp:p.mhp});
 });
-
 app.post('/api/admin/unlock-god', requireAdmin, (req,res)=>{
-  const {username} = req.body||{};
-  if(typeof username!=='string') return res.status(400).json({error:'닉네임이 필요합니다.'});
+  const {username}=req.body||{};
+  if(typeof username!=='string'||!username.trim()) return res.status(400).json({error:'닉네임이 필요합니다.'});
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
   const p=ensurePlayer(key); p.godUnlocked=true;
-  db.states[key].savedAt=Date.now();
-  try{persist();}catch(e){}
-  pushAdminStat(key,{godUnlocked:true,lv:p.lv,coin:p.coin,xp:p.xp,nx:p.nx,hp:p.hp,mhp:p.mhp});
-  res.json({ok:true,username:db.users[key].username,godUnlocked:true});
+  if(!db.states[key]) db.states[key]={version:1,player:p,camera:{},savedAt:Date.now()};
+  db.states[key].player=p; db.states[key].savedAt=Date.now();
+  try{persist();}catch(e){return res.status(500).json({error:'저장 실패'});}
+  let online=false;
+  for(const ws of wss.clients){ if(ws._userKey===key&&ws.readyState===WebSocket.OPEN){online=true;try{ws.send(JSON.stringify({type:'admin_action',action:'unlock_god'}));}catch{}} }
+  // Update in-memory player state immediately for server-side checks.
+  for(const pl of players.values()) if(pl.key===key) pl.godUnlocked=true;
+  res.json({ok:true,username:db.users[key].username,online, godUnlocked:true});
 });
-app.post('/api/admin/set-magesword', requireAdmin, (req,res)=>{
-  const {username} = req.body||{};
-  if(typeof username!=='string') return res.status(400).json({error:'닉네임이 필요합니다.'});
+app.post('/api/admin/magesword', requireAdmin, (req,res)=>{
+  const {username}=req.body||{};
+  if(typeof username!=='string'||!username.trim()) return res.status(400).json({error:'닉네임이 필요합니다.'});
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
-  const p=ensurePlayer(key); p.job='magesword'; p.msUnlocked=true;
-  db.states[key].savedAt=Date.now();
-  try{persist();}catch(e){}
-  pushAdminStat(key,{job:'magesword',msUnlocked:true,lv:p.lv,coin:p.coin,xp:p.xp,nx:p.nx,hp:p.hp,mhp:p.mhp});
-  res.json({ok:true,username:db.users[key].username,job:p.job,msUnlocked:true});
+  const p=ensurePlayer(key); p.job='magesword'; p.msUnlocked=true; p.jstep=0; p.jm=1.3; p.jhp=1.6;
+  if(!db.states[key]) db.states[key]={version:1,player:p,camera:{},savedAt:Date.now()};
+  db.states[key].player=p; db.states[key].savedAt=Date.now();
+  try{persist();}catch(e){return res.status(500).json({error:'저장 실패'});}
+  let online=false;
+  for(const ws of wss.clients){ if(ws._userKey===key&&ws.readyState===WebSocket.OPEN){online=true;try{ws.send(JSON.stringify({type:'admin_action',action:'magesword'}));}catch{}} }
+  for(const pl of players.values()) if(pl.key===key) pl.job='magesword';
+  res.json({ok:true,username:db.users[key].username,online,job:p.job,msUnlocked:true});
 });
 
 app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
@@ -1819,7 +1864,8 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.pot = [2, 0, 0, 0];
   if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
   p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
-  p.mhp = 100;
+  // 환생해도 누적된 최대 체력/환생 스탯 보너스는 유지
+  p.mhp = Math.max(100, Math.floor(Number(p.mhp)||100));
   p.hp = p.mhp;
   p.talentPts = expectedTalentPts(p);
   db.states[req.userKey].savedAt = Date.now();
@@ -2307,9 +2353,8 @@ wss.on('connection',ws=>{
       if(typeof m.pvp==='boolean') p.pvp=m.pvp;
       if(Number.isFinite(m.hp)) p.hp=Math.max(0,Math.min(1e6,m.hp));
       if(Number.isFinite(m.mhp)) p.mhp=Math.max(1,Math.min(1e6,m.mhp));
-      // 계정의 표시 이름은 로그인 토큰에서 결정되며 클라이언트가 덮어쓸 수 없음
-      if(ws._userKey){ const saved=ensurePlayer(ws._userKey); p.lv=Math.max(1,Math.min(1e6,Math.floor(saved.lv||1))); p.job=String(saved.job||''); }
-      else { if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv))); if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job; }
+      if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv)));
+      if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
       if(typeof m.hadesSword==='boolean') p.hadesSword=m.hadesSword;
       if(typeof m.godUnlocked==='boolean') p.godUnlocked=m.godUnlocked;
       if(m.inv) p.invTill=Math.max(p.invTill||0,now+150);   // 대쉬/스킬 무적 중에는 몬스터 공격 무효
@@ -2509,7 +2554,7 @@ if(m.type==='chat'){
       ws._stunT=now;
       for(const id of m.ids.slice(0,24)){
         const mm=monsters.get(id);
-        if(!mm||mm.dead||mm.type==='worldboss') continue;
+        if(!mm||mm.dead||mm.type==='worldboss'||mm.type==='zeus') continue;
         if(Math.hypot(mm.x-p.x,mm.z-p.z)>75) continue;
         mm.stun=3; mm.cast=null; mm.ver++;
       }
