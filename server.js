@@ -494,16 +494,25 @@ function killMonster(m, d, p) {
       const w = wsById.get(pid);
       if (w && w.readyState === WebSocket.OPEN) {
         got.add(pid);
-        try { w.send(JSON.stringify({ type: 'kill', id: m.id, mt: m.type })); } catch {}
+        let rewardCoin = 0, rewardXp = 0;
+        if (w._userKey) {
+          try {
+            const player = ensurePlayer(w._userKey);
+            rewardCoin = Math.max(0, Math.floor(d.g || 0));
+            rewardXp = Math.max(0, Math.floor(d.xp || 0));
+            if (rewardCoin > 0) player.coin = (player.coin || 0) + rewardCoin;
+            if (rewardXp > 0) player.xp = (player.xp || 0) + rewardXp;
+            if (db.states[w._userKey]) db.states[w._userKey].savedAt = Date.now();
+          } catch (_) {}
+          bumpStat(w._userKey, 'kills', 1); if (d.boss) bumpStat(w._userKey, 'boss', 1);
+          const g = guildOfKey(w._userKey);
+          if (g) addGuildExp(g, w._userKey, Math.min(2000, Math.max(1, Math.floor((d.xp || 0) / 25))));
+          if (d.boss) tryDropRune(w, m, d);
+        }
+        try { w.send(JSON.stringify({ type: 'kill', id: m.id, mt: m.type, coin: rewardCoin, xp: rewardXp })); } catch {}
         if (m.type === 'heavenlord' && !w.player.godUnlocked) {
           if (Math.random() < 0.10) { w.player.godUnlocked=true; try { w.send(JSON.stringify({type:'god_portal_unlock'})); } catch {} }
           else { try { w.send(JSON.stringify({type:'god_portal_fail'})); } catch {} }
-        }
-        if (w._userKey) {
-          bumpStat(w._userKey, 'kills', 1); if (d.boss) bumpStat(w._userKey, 'boss', 1);
-          const g = guildOfKey(w._userKey);
-          if (g) addGuildExp(g, w._userKey, Math.min(2000, Math.max(1, Math.floor(d.xp / 25))));
-          if (d.boss) tryDropRune(w, m, d);
         }
       }
     }
@@ -590,7 +599,9 @@ function deathGuideReady(p, m) {
 }
 function deathGuideKill(p, m) {
   const d = MT[m.type]; if (!d) return;
-  m.dmg.set(p.id, (m.dmg.get(p.id) || 0) + Math.max(1, Math.ceil(m.hp)));   // 보상이 나에게 들어오도록 기여도 기록
+  // 즉사 시에도 최소 5% 기여로 인정해 처치 보상이 누락되지 않게 한다.
+  const cur = m.dmg.get(p.id) || 0;
+  m.dmg.set(p.id, Math.max(cur + Math.max(1, Math.ceil(m.hp)), Math.ceil(m.mhp * 0.05)));
   m.hp = 0; m.ver++;
   killMonster(m, d, p);
 }
