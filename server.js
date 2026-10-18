@@ -176,12 +176,16 @@ const QUESTS = {
   w1:{name:'늑대 퇴치',need:8,coin:300,xp:180}, b1:{name:'불곰 사냥',need:5,coin:550,xp:350},
   g1:{name:'고블린 소탕',need:10,coin:900,xp:700}, o1:{name:'오크 전사 토벌',need:6,coin:1500,xp:1100},
   k1:{name:'해골 군단',need:10,coin:2400,xp:1800}, h1:{name:'유령 퇴치',need:8,coin:3800,xp:3000},
-  l1:{name:'골렘 파괴',need:3,coin:6500,xp:5500}, d1:{name:'용 사냥',need:1,coin:14000,xp:13000}
+  l1:{name:'골렘 파괴',need:3,coin:6500,xp:5500}, d1:{name:'용 사냥',need:1,coin:14000,xp:13000},
+  hvn1:{name:'케루빔 소탕',need:10,coin:60000,xp:40000},
+  hvn2:{name:'세라핌 처치',need:10,coin:80000,xp:60000},
+  hvn3:{name:'대천사 격파',need:1,coin:200000,xp:150000},
+  hvn4:{name:'천상 군주 토벌',need:1,coin:800000,xp:600000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
 // WORLD 는 index.html 의 최종 몬스터 정의(MT), 구역(ZD), 절벽(BK), 보스 위치를 추출한 값입니다.
-const WORLD = {"MT":{"slime":{"hp":30,"dmg":6,"xp":12,"g":3,"sp":3.6,"reach":1.8,"rt":8,"sc":1,"n":22,"nm":"슬라임"},"wolf":{"hp":55,"dmg":10,"xp":20,"g":6,"sp":8,"reach":2.2,"rt":8,"sc":1,"n":18,"nm":"늑대"},"goblin":{"hp":135,"dmg":18,"xp":51,"g":16,"sp":5,"reach":2.3,"rt":10,"sc":1.1,"n":14,"nm":"고블린"},"skeleton":{"hp":252,"dmg":30,"xp":88,"g":28,"sp":5.5,"reach":2.4,"rt":12,"sc":1.15,"n":12,"nm":"해골 병사"},"golem":{"hp":3750,"dmg":76,"xp":528,"g":216,"sp":3,"reach":4.4,"rt":30,"sc":2.4,"n":6,"ag":20,"cd":1.8,"nm":"골렘"},"mushroom":{"hp":40,"dmg":8,"xp":16,"g":4,"sp":4,"reach":1.7,"rt":8,"sc":1,"n":14,"nm":"독버섯"},"bear":{"hp":130,"dmg":17,"xp":38,"g":12,"sp":5,"reach":3,"rt":12,"sc":1.5,"n":10,"nm":"불곰"},"orc":{"hp":304,"dmg":33,"xp":104,"g":35,"sp":4.8,"reach":3,"rt":14,"sc":1.4,"n":9,"nm":"오크 전사"},"ghost":{"hp":216,"dmg":39,"xp":128,"g":41,"sp":6,"reach":2.2,"rt":14,"sc":1,"n":9,"nm":"유령"},"dragon":{"hp":600000,"dmg":1000,"xp":40000,"g":30000,"sp":5,"reach":8,"rt":300,"sc":2.8,"n":1,"ag":29.4,"cd":2,"boss":1,"fix":[-150,-2000],"nm":"에인션트 드래곤"},"frostwolf":{"hp":2700,"dmg":100,"xp":288,"g":96,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":14,"nm":"서리 늑대"},"yeti":{"hp":5850,"dmg":155,"xp":528,"g":192,"sp":5,"reach":3.4,"rt":14,"sc":1.7,"n":9,"nm":"예티"},"scorpion":{"hp":4680,"dmg":180,"xp":624,"g":216,"sp":6,"reach":2.6,"rt":10,"sc":1.2,"n":14,"nm":"거대 전갈"},"mummy":{"hp":9120,"dmg":228,"xp":912,"g":312,"sp":4.5,"reach":2.6,"rt":14,"sc":1.2,"n":10,"nm":"미라"},"toad":{"hp":14280,"dmg":283,"xp":1344,"g":456,"sp":5,"reach":2.8,"rt":12,"sc":1.3,"n":14,"nm":"독두꺼비"},"witch":{"hp":10200,"dmg":350,"xp":1680,"g":576,"sp":5,"reach":2.6,"rt":15,"sc":1.15,"n":9,"nm":"늪지 마녀"},"imp":{"hp":22800,"dmg":435,"xp":2160,"g":720,"sp":8.5,"reach":2.4,"rt":10,"sc":0.95,"n":14,"nm":"임프"},"hellhound":{"hp":38400,"dmg":528,"xp":3120,"g":1080,"sp":10,"reach":3,"rt":14,"sc":1.3,"n":10,"nm":"지옥견"},"darkknight":{"hp":46800,"dmg":735,"xp":4800,"g":1680,"sp":5.5,"reach":3.2,"rt":18,"sc":1.5,"n":8,"nm":"암흑 기사"},"demonlord":{"hp":2000000,"dmg":2000,"xp":200000,"g":120000,"sp":5,"reach":7,"rt":600,"sc":3.2,"n":1,"ag":32.2,"cd":2,"boss":1,"fix":[365,-820],"nm":"마왕"},"kingslime":{"hp":3000,"dmg":35,"xp":500,"g":400,"sp":3.5,"reach":3.8,"rt":60,"sc":3,"n":1,"ag":19.6,"cd":1.6,"boss":1,"fix":[0,-225],"nm":"킹 슬라임"},"wolfalpha":{"hp":9000,"dmg":110,"xp":1800,"g":1200,"sp":9,"reach":4,"rt":90,"sc":2.2,"n":1,"ag":23.8,"cd":1.4,"boss":1,"fix":[-185,-240],"nm":"늑대 대장"},"goblinking":{"hp":25000,"dmg":220,"xp":6000,"g":4000,"sp":5.5,"reach":4.5,"rt":120,"sc":2.4,"n":1,"ag":25.2,"cd":1.6,"boss":1,"fix":[185,-240],"nm":"고블린 왕"},"lich":{"hp":150000,"dmg":450,"xp":15000,"g":12000,"sp":5.5,"reach":5,"rt":180,"sc":2.6,"n":1,"ag":26.6,"cd":1.8,"boss":1,"fix":[495,-770],"nm":"해골 군주"},"boar":{"hp":70,"dmg":12,"xp":24,"g":7,"sp":6.5,"reach":2.3,"rt":8,"sc":1.1,"n":10,"nm":"멧돼지"},"spider":{"hp":150,"dmg":22,"xp":45,"g":14,"sp":7,"reach":2.4,"rt":9,"sc":1.2,"n":10,"nm":"거대 거미"},"goblinshaman":{"hp":330,"dmg":36,"xp":70,"g":24,"sp":4.5,"reach":2.6,"rt":10,"sc":1.1,"n":8,"nm":"고블린 주술사"},"zombie":{"hp":420,"dmg":44,"xp":90,"g":30,"sp":3.5,"reach":2.5,"rt":10,"sc":1.15,"n":9,"nm":"좀비"},"gargoyle":{"hp":4500,"dmg":90,"xp":450,"g":150,"sp":6,"reach":2.8,"rt":14,"sc":1.3,"n":4,"nm":"가고일"},"icegolem":{"hp":9000,"dmg":190,"xp":675,"g":225,"sp":4,"reach":3.6,"rt":14,"sc":2,"n":8,"nm":"얼음 골렘"},"cactus":{"hp":10800,"dmg":230,"xp":900,"g":300,"sp":4,"reach":2.8,"rt":12,"sc":1.3,"n":10,"nm":"선인장 몬스터"},"lizardman":{"hp":19500,"dmg":330,"xp":1500,"g":495,"sp":6,"reach":2.9,"rt":12,"sc":1.3,"n":10,"nm":"리자드맨"},"flamegolem":{"hp":32000,"dmg":560,"xp":2700,"g":900,"sp":4.5,"reach":3.8,"rt":16,"sc":2.1,"n":8,"nm":"화염 골렘"},"wraith":{"hp":30000,"dmg":800,"xp":3000,"g":1000,"sp":7,"reach":2.6,"rt":16,"sc":1.1,"n":8,"nm":"망령"},"bee":{"hp":60,"dmg":14,"xp":22,"g":6,"sp":8.5,"reach":2,"rt":8,"sc":1.2,"n":10,"nm":"거대 벌"},"treant":{"hp":220,"dmg":28,"xp":55,"g":18,"sp":3.5,"reach":3,"rt":10,"sc":1.6,"n":8,"nm":"나무 정령"},"hobgoblin":{"hp":380,"dmg":48,"xp":85,"g":28,"sp":5,"reach":2.7,"rt":10,"sc":1.3,"n":8,"nm":"홍고블린"},"necromancer":{"hp":500,"dmg":55,"xp":120,"g":40,"sp":4.5,"reach":2.6,"rt":12,"sc":1.15,"n":7,"nm":"네크로맨서"},"minotaur":{"hp":5400,"dmg":110,"xp":570,"g":195,"sp":5.5,"reach":3.4,"rt":14,"sc":1.8,"n":4,"nm":"미노타우르스"},"frostmage":{"hp":9900,"dmg":210,"xp":780,"g":255,"sp":4.5,"reach":2.8,"rt":12,"sc":1.2,"n":8,"nm":"얼음 마법사"},"anubis":{"hp":12600,"dmg":260,"xp":1050,"g":345,"sp":5.5,"reach":3,"rt":12,"sc":1.3,"n":8,"nm":"아누비스 전사"},"snake":{"hp":22500,"dmg":360,"xp":1725,"g":570,"sp":7,"reach":3.2,"rt":12,"sc":1.4,"n":10,"nm":"거대 뱀"},"pyromancer":{"hp":42000,"dmg":520,"xp":2550,"g":840,"sp":5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"화염술사"},"vampire":{"hp":33000,"dmg":900,"xp":3400,"g":1100,"sp":7.5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"흡혈귀"},"frostgiant":{"hp":200000,"dmg":600,"xp":30000,"g":25000,"sp":5,"reach":6,"rt":240,"sc":3,"n":1,"ag":28,"cd":1.8,"boss":1,"fix":[365,-660],"nm":"서리 거인"},"pharaoh":{"hp":300000,"dmg":800,"xp":45000,"g":35000,"sp":5.5,"reach":5.5,"rt":270,"sc":2.6,"n":1,"ag":29,"cd":1.7,"boss":1,"fix":[365,-700],"nm":"파라오"},"hydra":{"hp":450000,"dmg":1100,"xp":70000,"g":55000,"sp":5,"reach":7,"rt":300,"sc":3,"n":1,"ag":30,"cd":2,"boss":1,"fix":[365,-740],"nm":"히드라"},"balrog":{"hp":800000,"dmg":1600,"xp":120000,"g":90000,"sp":5.5,"reach":7,"rt":420,"sc":3.4,"n":1,"ag":31,"cd":2,"boss":1,"fix":[365,-780],"nm":"발록"},"mgoat":{"hp":170,"dmg":21,"xp":44,"g":14,"sp":6.5,"reach":2.4,"rt":9,"sc":1.15,"n":8,"nm":"산양"},"bandit":{"hp":280,"dmg":32,"xp":68,"g":24,"sp":5.2,"reach":2.6,"rt":11,"sc":1.1,"n":8,"nm":"산적"},"worldboss":{"hp":8000000,"dmg":5000,"xp":3000000,"g":1500000,"sp":6.5,"reach":8,"rt":600,"sc":4.5,"n":1,"ag":70,"cd":2.2,"boss":1,"fix":[760,-740],"nm":"월드 보스"},"crystalbeetle":{"hp":650,"dmg":70,"xp":150,"g":50,"sp":5,"reach":2.6,"rt":10,"sc":1.25,"n":12,"nm":"수정 딱정벌레"},"crystalbat":{"hp":520,"dmg":80,"xp":170,"g":56,"sp":9.5,"reach":2.2,"rt":9,"sc":1.0,"n":12,"nm":"수정 박쥐"},"prismwisp":{"hp":900,"dmg":110,"xp":240,"g":80,"sp":6.5,"reach":2.4,"rt":11,"sc":1.0,"n":8,"nm":"프리즘 정령"},"amethystgolem":{"hp":1700,"dmg":125,"xp":340,"g":120,"sp":3.6,"reach":4.0,"rt":16,"sc":2.0,"n":6,"ag":20,"cd":1.8,"nm":"자수정 골렘"},"statueguard":{"hp":1500,"dmg":115,"xp":300,"g":100,"sp":4.2,"reach":3.2,"rt":14,"sc":1.7,"n":8,"nm":"석상 수호병"},"harpy":{"hp":800,"dmg":105,"xp":230,"g":78,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":10,"nm":"하피"},"cursedarmor":{"hp":1200,"dmg":140,"xp":280,"g":96,"sp":5.5,"reach":3.0,"rt":12,"sc":1.4,"n":8,"nm":"저주받은 갑옷"},"mimic":{"hp":1000,"dmg":150,"xp":260,"g":200,"sp":6,"reach":2.4,"rt":12,"sc":1.2,"n":6,"nm":"미믹"}},"ZD":{"village":[[-48,48,-48,48]],"corridor":[[-8,8,-150,-24]],"plains":[[-110,110,-300,-150]],"forest":[[-260,-110,-300,-170]],"camp":[[110,260,-300,-170]],"hill":[[-160,80,-440,-300]],"cavearea":[[-260,-160,-440,-300]],"bentry":[[380,480,-640,-560]],"grave":[[430,560,-840,-640]],"snow":[[300,430,-680,-640]],"desert":[[300,430,-720,-680]],"swamp":[[300,430,-760,-720]],"hell":[[300,430,-800,-760]],"dark":[[300,430,-840,-800]],"centry":[[-220,-80,-1900,-1800]],"golem":[[-300,0,-2060,-1900]],"arena":[[700,820,-780,-660]],"crystal":[[80,260,-440,-300]],"ruins":[[-400,-260,-300,-170]],"volcano":[[-420,-260,-460,-280]],"heaven":[[-600,-420,-460,-280]]},"ZT":{"slime":"plains","mushroom":"plains","boar":"plains","bee":"plains","wolf":"forest","bear":"forest","spider":"forest","treant":"forest","goblin":"camp","orc":"camp","hobgoblin":"camp","goblinshaman":"camp","skeleton":"grave","ghost":"grave","zombie":"grave","necromancer":"grave","wraith":"grave","vampire":"grave","frostwolf":"snow","yeti":"snow","frostmage":"snow","scorpion":"desert","mummy":"desert","cactus":"desert","lizardman":"desert","anubis":"desert","toad":"swamp","witch":"swamp","snake":"swamp","imp":"hell","hellhound":"hell","pyromancer":"hell","darkknight":"dark","golem":"golem","gargoyle":"golem","icegolem":"golem","flamegolem":"golem","minotaur":"golem","mgoat":"hill","bandit":"hill","crystalbeetle":"crystal","crystalbat":"crystal","prismwisp":"crystal","amethystgolem":"crystal","statueguard":"ruins","harpy":"ruins","cursedarmor":"ruins","mimic":"ruins"},"BK":[[-60,-30,-390,-340],[10,40,-420,-380],[428,432,-840,-800],[428,432,-770,-720],[428,432,-690,-640]],"BOSS":{"kingslime":[0,-225],"wolfalpha":[-185,-240],"goblinking":[185,-240],"lich":[495,-770],"frostgiant":[365,-660],"pharaoh":[365,-700],"hydra":[365,-740],"balrog":[365,-780],"demonlord":[365,-820],"dragon":[-150,-2000],"worldboss":[760,-740],"volcanolord":[-340,-370]}};
+const WORLD = {"MT":{"slime":{"hp":30,"dmg":6,"xp":12,"g":3,"sp":3.6,"reach":1.8,"rt":8,"sc":1,"n":22,"nm":"슬라임"},"wolf":{"hp":55,"dmg":10,"xp":20,"g":6,"sp":8,"reach":2.2,"rt":8,"sc":1,"n":18,"nm":"늑대"},"goblin":{"hp":135,"dmg":18,"xp":51,"g":16,"sp":5,"reach":2.3,"rt":10,"sc":1.1,"n":14,"nm":"고블린"},"skeleton":{"hp":252,"dmg":30,"xp":88,"g":28,"sp":5.5,"reach":2.4,"rt":12,"sc":1.15,"n":12,"nm":"해골 병사"},"golem":{"hp":3750,"dmg":76,"xp":528,"g":216,"sp":3,"reach":4.4,"rt":30,"sc":2.4,"n":6,"ag":20,"cd":1.8,"nm":"골렘"},"mushroom":{"hp":40,"dmg":8,"xp":16,"g":4,"sp":4,"reach":1.7,"rt":8,"sc":1,"n":14,"nm":"독버섯"},"bear":{"hp":130,"dmg":17,"xp":38,"g":12,"sp":5,"reach":3,"rt":12,"sc":1.5,"n":10,"nm":"불곰"},"orc":{"hp":304,"dmg":33,"xp":104,"g":35,"sp":4.8,"reach":3,"rt":14,"sc":1.4,"n":9,"nm":"오크 전사"},"ghost":{"hp":216,"dmg":39,"xp":128,"g":41,"sp":6,"reach":2.2,"rt":14,"sc":1,"n":9,"nm":"유령"},"dragon":{"hp":600000,"dmg":1000,"xp":40000,"g":30000,"sp":5,"reach":8,"rt":300,"sc":2.8,"n":1,"ag":29.4,"cd":2,"boss":1,"fix":[-150,-2000],"nm":"에인션트 드래곤"},"frostwolf":{"hp":2700,"dmg":100,"xp":288,"g":96,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":14,"nm":"서리 늑대"},"yeti":{"hp":5850,"dmg":155,"xp":528,"g":192,"sp":5,"reach":3.4,"rt":14,"sc":1.7,"n":9,"nm":"예티"},"scorpion":{"hp":4680,"dmg":180,"xp":624,"g":216,"sp":6,"reach":2.6,"rt":10,"sc":1.2,"n":14,"nm":"거대 전갈"},"mummy":{"hp":9120,"dmg":228,"xp":912,"g":312,"sp":4.5,"reach":2.6,"rt":14,"sc":1.2,"n":10,"nm":"미라"},"toad":{"hp":14280,"dmg":283,"xp":1344,"g":456,"sp":5,"reach":2.8,"rt":12,"sc":1.3,"n":14,"nm":"독두꺼비"},"witch":{"hp":10200,"dmg":350,"xp":1680,"g":576,"sp":5,"reach":2.6,"rt":15,"sc":1.15,"n":9,"nm":"늪지 마녀"},"imp":{"hp":22800,"dmg":435,"xp":2160,"g":720,"sp":8.5,"reach":2.4,"rt":10,"sc":0.95,"n":14,"nm":"임프"},"hellhound":{"hp":38400,"dmg":528,"xp":3120,"g":1080,"sp":10,"reach":3,"rt":14,"sc":1.3,"n":10,"nm":"지옥견"},"darkknight":{"hp":46800,"dmg":735,"xp":4800,"g":1680,"sp":5.5,"reach":3.2,"rt":18,"sc":1.5,"n":8,"nm":"암흑 기사"},"demonlord":{"hp":2000000,"dmg":2000,"xp":200000,"g":120000,"sp":5,"reach":7,"rt":600,"sc":3.2,"n":1,"ag":32.2,"cd":2,"boss":1,"fix":[365,-820],"nm":"마왕"},"kingslime":{"hp":3000,"dmg":35,"xp":500,"g":400,"sp":3.5,"reach":3.8,"rt":60,"sc":3,"n":1,"ag":19.6,"cd":1.6,"boss":1,"fix":[0,-225],"nm":"킹 슬라임"},"wolfalpha":{"hp":9000,"dmg":110,"xp":1800,"g":1200,"sp":9,"reach":4,"rt":90,"sc":2.2,"n":1,"ag":23.8,"cd":1.4,"boss":1,"fix":[-185,-240],"nm":"늑대 대장"},"goblinking":{"hp":25000,"dmg":220,"xp":6000,"g":4000,"sp":5.5,"reach":4.5,"rt":120,"sc":2.4,"n":1,"ag":25.2,"cd":1.6,"boss":1,"fix":[185,-240],"nm":"고블린 왕"},"lich":{"hp":150000,"dmg":450,"xp":15000,"g":12000,"sp":5.5,"reach":5,"rt":180,"sc":2.6,"n":1,"ag":26.6,"cd":1.8,"boss":1,"fix":[495,-770],"nm":"해골 군주"},"boar":{"hp":70,"dmg":12,"xp":24,"g":7,"sp":6.5,"reach":2.3,"rt":8,"sc":1.1,"n":10,"nm":"멧돼지"},"spider":{"hp":150,"dmg":22,"xp":45,"g":14,"sp":7,"reach":2.4,"rt":9,"sc":1.2,"n":10,"nm":"거대 거미"},"goblinshaman":{"hp":330,"dmg":36,"xp":70,"g":24,"sp":4.5,"reach":2.6,"rt":10,"sc":1.1,"n":8,"nm":"고블린 주술사"},"zombie":{"hp":420,"dmg":44,"xp":90,"g":30,"sp":3.5,"reach":2.5,"rt":10,"sc":1.15,"n":9,"nm":"좀비"},"gargoyle":{"hp":4500,"dmg":90,"xp":450,"g":150,"sp":6,"reach":2.8,"rt":14,"sc":1.3,"n":4,"nm":"가고일"},"icegolem":{"hp":9000,"dmg":190,"xp":675,"g":225,"sp":4,"reach":3.6,"rt":14,"sc":2,"n":8,"nm":"얼음 골렘"},"cactus":{"hp":10800,"dmg":230,"xp":900,"g":300,"sp":4,"reach":2.8,"rt":12,"sc":1.3,"n":10,"nm":"선인장 몬스터"},"lizardman":{"hp":19500,"dmg":330,"xp":1500,"g":495,"sp":6,"reach":2.9,"rt":12,"sc":1.3,"n":10,"nm":"리자드맨"},"flamegolem":{"hp":32000,"dmg":560,"xp":2700,"g":900,"sp":4.5,"reach":3.8,"rt":16,"sc":2.1,"n":8,"nm":"화염 골렘"},"wraith":{"hp":30000,"dmg":800,"xp":3000,"g":1000,"sp":7,"reach":2.6,"rt":16,"sc":1.1,"n":8,"nm":"망령"},"bee":{"hp":60,"dmg":14,"xp":22,"g":6,"sp":8.5,"reach":2,"rt":8,"sc":1.2,"n":10,"nm":"거대 벌"},"treant":{"hp":220,"dmg":28,"xp":55,"g":18,"sp":3.5,"reach":3,"rt":10,"sc":1.6,"n":8,"nm":"나무 정령"},"hobgoblin":{"hp":380,"dmg":48,"xp":85,"g":28,"sp":5,"reach":2.7,"rt":10,"sc":1.3,"n":8,"nm":"홍고블린"},"necromancer":{"hp":500,"dmg":55,"xp":120,"g":40,"sp":4.5,"reach":2.6,"rt":12,"sc":1.15,"n":7,"nm":"네크로맨서"},"minotaur":{"hp":5400,"dmg":110,"xp":570,"g":195,"sp":5.5,"reach":3.4,"rt":14,"sc":1.8,"n":4,"nm":"미노타우르스"},"frostmage":{"hp":9900,"dmg":210,"xp":780,"g":255,"sp":4.5,"reach":2.8,"rt":12,"sc":1.2,"n":8,"nm":"얼음 마법사"},"anubis":{"hp":12600,"dmg":260,"xp":1050,"g":345,"sp":5.5,"reach":3,"rt":12,"sc":1.3,"n":8,"nm":"아누비스 전사"},"snake":{"hp":22500,"dmg":360,"xp":1725,"g":570,"sp":7,"reach":3.2,"rt":12,"sc":1.4,"n":10,"nm":"거대 뱀"},"pyromancer":{"hp":42000,"dmg":520,"xp":2550,"g":840,"sp":5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"화염술사"},"vampire":{"hp":33000,"dmg":900,"xp":3400,"g":1100,"sp":7.5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"흡혈귀"},"frostgiant":{"hp":200000,"dmg":600,"xp":30000,"g":25000,"sp":5,"reach":6,"rt":240,"sc":3,"n":1,"ag":28,"cd":1.8,"boss":1,"fix":[365,-660],"nm":"서리 거인"},"pharaoh":{"hp":300000,"dmg":800,"xp":45000,"g":35000,"sp":5.5,"reach":5.5,"rt":270,"sc":2.6,"n":1,"ag":29,"cd":1.7,"boss":1,"fix":[365,-700],"nm":"파라오"},"hydra":{"hp":450000,"dmg":1100,"xp":70000,"g":55000,"sp":5,"reach":7,"rt":300,"sc":3,"n":1,"ag":30,"cd":2,"boss":1,"fix":[365,-740],"nm":"히드라"},"balrog":{"hp":800000,"dmg":1600,"xp":120000,"g":90000,"sp":5.5,"reach":7,"rt":420,"sc":3.4,"n":1,"ag":31,"cd":2,"boss":1,"fix":[365,-780],"nm":"발록"},"mgoat":{"hp":170,"dmg":21,"xp":44,"g":14,"sp":6.5,"reach":2.4,"rt":9,"sc":1.15,"n":8,"nm":"산양"},"bandit":{"hp":280,"dmg":32,"xp":68,"g":24,"sp":5.2,"reach":2.6,"rt":11,"sc":1.1,"n":8,"nm":"산적"},"worldboss":{"hp":8000000,"dmg":5000,"xp":3000000,"g":1500000,"sp":6.5,"reach":8,"rt":600,"sc":4.5,"n":1,"ag":70,"cd":2.2,"boss":1,"fix":[760,-740],"nm":"월드 보스"},"crystalbeetle":{"hp":650,"dmg":70,"xp":150,"g":50,"sp":5,"reach":2.6,"rt":10,"sc":1.25,"n":12,"nm":"수정 딱정벌레"},"crystalbat":{"hp":520,"dmg":80,"xp":170,"g":56,"sp":9.5,"reach":2.2,"rt":9,"sc":1.0,"n":12,"nm":"수정 박쥐"},"prismwisp":{"hp":900,"dmg":110,"xp":240,"g":80,"sp":6.5,"reach":2.4,"rt":11,"sc":1.0,"n":8,"nm":"프리즘 정령"},"amethystgolem":{"hp":1700,"dmg":125,"xp":340,"g":120,"sp":3.6,"reach":4.0,"rt":16,"sc":2.0,"n":6,"ag":20,"cd":1.8,"nm":"자수정 골렘"},"statueguard":{"hp":1500,"dmg":115,"xp":300,"g":100,"sp":4.2,"reach":3.2,"rt":14,"sc":1.7,"n":8,"nm":"석상 수호병"},"harpy":{"hp":800,"dmg":105,"xp":230,"g":78,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":10,"nm":"하피"},"cursedarmor":{"hp":1200,"dmg":140,"xp":280,"g":96,"sp":5.5,"reach":3.0,"rt":12,"sc":1.4,"n":8,"nm":"저주받은 갑옷"},"mimic":{"hp":1000,"dmg":150,"xp":260,"g":200,"sp":6,"reach":2.4,"rt":12,"sc":1.2,"n":6,"nm":"미믹"}},"ZD":{"village":[[-40,40,-40,40]],"corridor":[[-8,8,-150,-40]],"plains":[[-110,110,-300,-150]],"forest":[[-260,-110,-300,-170]],"camp":[[110,260,-300,-170]],"hill":[[-160,80,-440,-300]],"cavearea":[[-260,-160,-440,-300]],"bentry":[[380,480,-640,-560]],"grave":[[430,560,-840,-640]],"snow":[[300,430,-680,-640]],"desert":[[300,430,-720,-680]],"swamp":[[300,430,-760,-720]],"hell":[[300,430,-800,-760]],"dark":[[300,430,-840,-800]],"centry":[[-220,-80,-1900,-1800]],"golem":[[-300,0,-2060,-1900]],"arena":[[700,820,-780,-660]],"crystal":[[80,260,-440,-300]],"ruins":[[-400,-260,-300,-170]],"volcano":[[-420,-260,-460,-280]]},"ZT":{"slime":"plains","mushroom":"plains","boar":"plains","bee":"plains","wolf":"forest","bear":"forest","spider":"forest","treant":"forest","goblin":"camp","orc":"camp","hobgoblin":"camp","goblinshaman":"camp","skeleton":"grave","ghost":"grave","zombie":"grave","necromancer":"grave","wraith":"grave","vampire":"grave","frostwolf":"snow","yeti":"snow","frostmage":"snow","scorpion":"desert","mummy":"desert","cactus":"desert","lizardman":"desert","anubis":"desert","toad":"swamp","witch":"swamp","snake":"swamp","imp":"hell","hellhound":"hell","pyromancer":"hell","darkknight":"dark","golem":"golem","gargoyle":"golem","icegolem":"golem","flamegolem":"golem","minotaur":"golem","mgoat":"hill","bandit":"hill","crystalbeetle":"crystal","crystalbat":"crystal","prismwisp":"crystal","amethystgolem":"crystal","statueguard":"ruins","harpy":"ruins","cursedarmor":"ruins","mimic":"ruins"},"BK":[[-60,-30,-390,-340],[10,40,-420,-380],[428,432,-840,-800],[428,432,-770,-720],[428,432,-690,-640]],"BOSS":{"kingslime":[0,-225],"wolfalpha":[-185,-240],"goblinking":[185,-240],"lich":[495,-770],"frostgiant":[365,-660],"pharaoh":[365,-700],"hydra":[365,-740],"balrog":[365,-780],"demonlord":[365,-820],"dragon":[-150,-2000],"worldboss":[760,-740],"volcanolord":[-340,-370]}};
 const MT = WORLD.MT;
 
 // 신규 몬스터 스탯
@@ -209,13 +213,28 @@ Object.assign(WORLD.ZT, {
   volcanoorc:'volcano', ashgolem:'volcano', phoenix:'volcano', volcanolord:'volcano'
 });
 
+// ===== 천상 지역 (최고 난이도, 화산 북쪽) =====
+WORLD.ZD.heaven = [[-420,-260,-520,-460]];
+Object.assign(WORLD.MT, {
+  cherub:{hp:60000,dmg:900,xp:7000,g:2500,sp:6,reach:2.6,rt:14,sc:1.3,n:10,nm:'케루빔'},
+  seraphim:{hp:80000,dmg:1100,xp:9000,g:3200,sp:6.5,reach:2.8,rt:15,sc:1.4,n:10,nm:'세라핌'},
+  celestialknight:{hp:100000,dmg:1300,xp:12000,g:4000,sp:5.5,reach:3.0,rt:16,sc:1.6,n:8,nm:'천상 기사'},
+  lightwisp:{hp:50000,dmg:800,xp:6000,g:2000,sp:7,reach:2.4,rt:12,sc:1.0,n:8,nm:'빛의 정령'},
+  divinebeast:{hp:120000,dmg:1500,xp:15000,g:5000,sp:5,reach:3.2,rt:18,sc:1.8,n:6,ag:22,cd:1.9,nm:'신성 야수'},
+  archangel:{hp:800000,dmg:2500,xp:100000,g:50000,sp:5,reach:6,rt:240,sc:2.8,n:1,ag:28,cd:1.8,boss:1,fix:[-340,-480],nm:'대천사'},
+  heavenlord:{hp:4000000,dmg:3500,xp:500000,g:300000,sp:5.5,reach:7,rt:420,sc:3.2,n:1,ag:32,cd:2,boss:1,fix:[-340,-500],nm:'천상 군주'}
+});
+Object.assign(WORLD.ZT, {cherub:'heaven',seraphim:'heaven',celestialknight:'heaven',lightwisp:'heaven',divinebeast:'heaven',archangel:'heaven',heavenlord:'heaven'});
+WORLD.BOSS.archangel=[-340,-480]; WORLD.BOSS.heavenlord=[-340,-500];
+// ===== /천상 지역 =====
+
 const ZONE_RECTS = WORLD.ZD;
 const ZT = WORLD.ZT;
 const BK = WORLD.BK;
 const BOSS_POS = Object.values(WORLD.BOSS);
 const ALLR = Object.values(ZONE_RECTS).flat();
 const AOI_RADIUS = 260;          // 이 거리 안의 몬스터 변화만 각 플레이어에게 전송
-const inSafe = (x, z) => (Math.abs(x) <= 26 && Math.abs(z) <= 26) || Math.hypot(x, z) <= 18; // 시작마을 전체(정사각형 ±24 + 여유) = 안전지대
+const inSafe = (x, z) => Math.abs(x) <= 42 && Math.abs(z) <= 42; // 시작마을 전체(정사각형 ±24 + 여유) = 안전지대
 const VILLAGE_R = 18;            // 마을 반경 (몬스터 진입/공격 불가)
 
 // players / wsById 는 아래 WebSocket 섹션에서 채워집니다 (함수 안에서만 참조하므로 선언 순서 문제 없음)
@@ -257,22 +276,6 @@ function respawnMonster(m) {
   m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8); m._ret = null; m._lastTgtId = null; m._wbDone = false; m.shield = null; m.crystals = null; m.floor = null;
   m.dmg.clear(); m.ver++;
 }
-
-Object.assign(WORLD.MT, {
-  cloudsprite:{hp:150000,dmg:1000,xp:14000,g:4500,sp:5,reach:2.8,rt:12,sc:1.4,n:12,nm:'구름 정령'},
-  skyharpy:{hp:170000,dmg:1100,xp:16000,g:5000,sp:8.5,reach:3.0,rt:13,sc:1.6,n:10,nm:'하늘 하피'},
-  starwisp:{hp:140000,dmg:1250,xp:15000,g:4800,sp:9,reach:2.6,rt:12,sc:1.1,n:10,nm:'별빛 위습'},
-  angelguard:{hp:220000,dmg:1400,xp:22000,g:6500,sp:5.2,reach:3.2,rt:15,sc:1.7,n:10,nm:'천상 병사'},
-  skyunicorn:{hp:260000,dmg:1500,xp:26000,g:7500,sp:10,reach:3.4,rt:16,sc:1.8,n:6,ag:24,cd:1.5,nm:'천상 유니콘'},
-  thundergolem:{hp:450000,dmg:2000,xp:42000,g:12000,sp:3.8,reach:4.6,rt:22,sc:2.6,n:4,ag:24,cd:1.9,nm:'천둥 골렘'},
-  seraph:{hp:6000000,dmg:4500,xp:600000,g:400000,sp:6,reach:8,rt:600,sc:3.4,n:1,ag:34,cd:2,boss:1,pos:[-490,-370],nm:'세라핌'}
-});
-Object.assign(WORLD.ZT, {
-  cloudsprite:'heaven', skyharpy:'heaven', starwisp:'heaven', angelguard:'heaven',
-  skyunicorn:'heaven', thundergolem:'heaven', seraph:'heaven'
-});
-WORLD.BOSS.seraph = [-490, -370];
-
 function initMonsters() {
   for (const [type, d] of Object.entries(MT)) for (let i = 0; i < d.n; i++) spawnMonster(type);
   console.log('Server monsters spawned:', monsters.size);
@@ -288,7 +291,7 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // 플레이어가 몬스터를 타격 (클라이언트가 보고한 피해량 — 거리/빈도/상한을 서버가 검증)
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
-const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400 };
+const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150 };
 const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
@@ -448,9 +451,9 @@ function inCone(p, ox, oz, dir, len, half) {
 function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 10); }
 
 // ===== 보스 쉴드 / 그로기 / 장판 기믹 =====
-const BOSS_SHIELD_ELEMS = { lich:'dark', frostgiant:'ice', pharaoh:'fire', hydra:'poison', balrog:'fire', demonlord:'dark', volcanolord:'fire' }; // 동굴(차원 입구) 지역 보스 + 화산 군주만
+const BOSS_SHIELD_ELEMS = {}; // 일반 보스 원소 쉴드 제거: 수정 쉴드는 월드보스와 천상 군주 전용
 const WB_CRYSTALS = 4, WB_CRYSTAL_HP = 100000, WB_SHIELD_REGEN = 0.005;   // 월드보스: 수정 4개(각 10만), 쉴드 중 초당 0.5% 회복
-const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', all:'만능 쉴드' };
+const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', holy:'신성 쉴드', all:'만능 쉴드' };
 function maybeStartShield(m, d) {
   if (!d.boss || m.shield || (m.groggy && m.groggy > 0)) return;
   const elem = BOSS_SHIELD_ELEMS[m.type];
@@ -467,7 +470,7 @@ function maybeStartShield(m, d) {
 function spawnCrystals(m, d, hpEach) {
   if (!d.boss) return;
   if (m.crystals && m.crystals.some(c => !c.dead)) return;
-  const n = m.type === 'worldboss' ? WB_CRYSTALS : 3;
+  const n = (m.type === 'worldboss' || m.type === 'heavenlord') ? WB_CRYSTALS : 3;
   const sc = d.sc || 2;
   const list = [];
   for (let i = 0; i < n; i++) {
@@ -501,16 +504,17 @@ function tickBossGimmick(m, d, dt, now, alive) {
     if (m.groggy <= 0) { m.groggy = 0; m.crystals = null; sendNear(m.x, m.z, { type: 'groggy_end', id: m.id }); }
   }
   maybeStartShield(m, d);
-  // 월드보스: HP 50% 이하가 되면 (1회) 수정 4개 + 쉴드. 쉴드 중 초당 0.5% 회복, 공격 불가
-  if (m.type === 'worldboss') {
+  // 수정 쉴드 보스 (월드보스 + 천상 군주): HP 50% 이하에서 (1회) 수정 4개 + 쉴드
+  if (m.type === 'worldboss' || m.type === 'heavenlord') {
     if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
       m._wbDone = true;
       m.cast = null; m.floor = null;
-      spawnCrystals(m, d, WB_CRYSTAL_HP);
-      const tot = WB_CRYSTALS * WB_CRYSTAL_HP;
-      m.shield = { elem: 'all', hp: tot, mhp: tot, crystal: true };
+      const crHP = m.type === 'worldboss' ? WB_CRYSTAL_HP : Math.max(2000, Math.floor(m.mhp * 0.02));
+      spawnCrystals(m, d, crHP);
+      const tot = WB_CRYSTALS * crHP;
+      m.shield = { elem:'all', hp:tot, mhp:tot, crystal:true };
       m.ver++;
-      sendNear(m.x, m.z, { type: 'shield_on', id: m.id, elem: 'all', hp: tot, mhp: tot, name: '수정 쉴드' });
+      sendNear(m.x, m.z, { type:'shield_on', id:m.id, elem:'all', hp:tot, mhp:tot, name:'수정 쉴드' });
     }
     if (m.shield && m.shield.crystal) {
       m.hp = Math.min(m.mhp, m.hp + m.mhp * WB_SHIELD_REGEN * dt);
@@ -782,7 +786,7 @@ function seedAdmin(){
 
 function ensurePlayer(key){
   if(!db.states[key] || !db.states[key].player){
-    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,bank:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{}},camera:{},savedAt:Date.now()};
+    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{}},camera:{},savedAt:Date.now()};
   }
   const p=db.states[key].player;
   if(!Array.isArray(p.pot)) p.pot=[2,0,0,0];
@@ -801,9 +805,10 @@ function ensurePlayer(key){
   p.rebirth=Math.max(0,Math.min(99,Math.floor(p.rebirth)));
   if(typeof p.rcoin!=='number'||!Number.isFinite(p.rcoin)) p.rcoin=0;
   p.rcoin=Math.max(0,Math.min(1e9,Math.floor(p.rcoin)));
-  if(typeof p.bank!=='number'||!Number.isFinite(p.bank)) p.bank=0;
-  p.bank=Math.max(0,Math.min(1e15,Math.floor(p.bank)));
   if(typeof p.title!=='string') p.title='';
+  if(!p.bank||typeof p.bank!=='object') p.bank={coin:0,items:{}};
+  if(typeof p.bank.coin!=='number'||!Number.isFinite(p.bank.coin)) p.bank.coin=0;
+  if(!p.bank.items||typeof p.bank.items!=='object') p.bank.items={};
   if(!p.talents||typeof p.talents!=='object') p.talents={};
   if(typeof p.talentPts!=='number'||!Number.isFinite(p.talentPts)) p.talentPts=0;
   p.talentPts=Math.max(0,Math.min(500,Math.floor(p.talentPts)));
@@ -818,7 +823,7 @@ function ensurePlayer(key){
 function cleanState(input){
  if(!input||typeof input!=='object'||Array.isArray(input))return null;
  const p=input.player,c=input.camera;if(!p||typeof p!=='object'||Array.isArray(p))return null;
- const fields=['x','z','y','hp','mhp','lv','xp','nx','coin','bank','at','face','inv','w','a','rg'],player={};
+ const fields=['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg'],player={};
  for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v))player[k]=Math.max(-1000000,Math.min(1000000,v));}
  player.x=Math.max(-1100,Math.min(1100,Number(player.x)||0));player.z=Math.max(-2400,Math.min(400,Number(player.z)||0));
  player.lv=Math.max(1,Math.min(1e6,Math.floor(Number(player.lv)||1)));player.mhp=Math.max(1,Math.min(100000,Number(player.mhp)||100));player.hp=Math.max(0,Math.min(player.mhp,Number(player.hp)||0));
@@ -928,11 +933,12 @@ app.post('/api/save',requireUser,(req,res)=>{
       np.lv = prev.lv; np.xp = Math.max(np.xp|0, prev.xp|0); np.nx = prev.nx || np.nx;
     }
   }
+  if(prev&&prev.bank) state.player.bank=prev.bank;
   db.states[req.userKey]=state;
   persistSoon();
   res.json({ok:true,savedAt:state.savedAt});
 });
-app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();db.states[key]=state;persistSoon();res.status(204).end();});
+app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv&&pv.bank)state.player.bank=pv.bank;}db.states[key]=state;persistSoon();res.status(204).end();});
 app.post('/api/logout',(req,res)=>{clearCookie(req,res);res.json({ok:true});});
 
 app.post('/api/buy', requireUser, (req, res) => {
@@ -963,8 +969,7 @@ app.post('/api/buy', requireUser, (req, res) => {
   else if (type === 'w') { if (!player.ow.includes(index)) player.ow.push(index); player.w = index; }
   else { if (!player.oa.includes(index)) player.oa.push(index); player.a = index; }
   db.states[req.userKey].savedAt = Date.now();
-  try { persist(); res.json({ ok:true, type, index, amount, name, bank: Math.max(0, Math.min(1e15, Math.floor(Number(p.bank)||0))),
-    coin:player.coin, pot:player.pot, w:player.w, a:player.a, ow:player.ow, oa:player.oa }); }
+  try { persist(); res.json({ ok:true, type, index, amount, name, coin:player.coin, pot:player.pot, w:player.w, a:player.a, ow:player.ow, oa:player.oa }); }
   catch(e){ res.status(500).json({ error:'저장 실패' }); }
 });
 
@@ -1514,35 +1519,6 @@ const ENH_RATE = [1,1,1,1,1,1,0.9,0.8,0.7,0.55,0.4,0.3,0.22,0.15,0.1,0.06];
 function enhAtkBonus(lv) { return lv <= 0 ? 0 : Math.floor(lv * 3 + Math.pow(lv, 1.35)); }
 function enhHpBonus(lv) { return lv <= 0 ? 0 : Math.floor(lv * 8 + Math.pow(lv, 1.4) * 2); }
 
-
-// ===== 은행 =====
-app.get('/api/bank', requireUser, (req, res) => {
-  const p = ensurePlayer(req.userKey);
-  res.json({ ok:true, coin: p.coin|0, bank: p.bank|0 });
-});
-app.post('/api/bank/deposit', requireUser, (req, res) => {
-  const p = ensurePlayer(req.userKey);
-  const amt = Math.floor(Number(req.body && req.body.amount) || 0);
-  if (amt <= 0) return res.status(400).json({ error: '금액을 입력하세요.' });
-  if ((p.coin|0) < amt) return res.status(400).json({ error: '코인이 부족합니다.', coin: p.coin|0, bank: p.bank|0 });
-  p.coin = (p.coin|0) - amt;
-  p.bank = (p.bank|0) + amt;
-  db.states[req.userKey].savedAt = Date.now();
-  persistSoon();
-  res.json({ ok:true, coin: p.coin|0, bank: p.bank|0 });
-});
-app.post('/api/bank/withdraw', requireUser, (req, res) => {
-  const p = ensurePlayer(req.userKey);
-  const amt = Math.floor(Number(req.body && req.body.amount) || 0);
-  if (amt <= 0) return res.status(400).json({ error: '금액을 입력하세요.' });
-  if ((p.bank|0) < amt) return res.status(400).json({ error: '은행 잔고가 부족합니다.', coin: p.coin|0, bank: p.bank|0 });
-  p.bank = (p.bank|0) - amt;
-  p.coin = (p.coin|0) + amt;
-  db.states[req.userKey].savedAt = Date.now();
-  persistSoon();
-  res.json({ ok:true, coin: p.coin|0, bank: p.bank|0 });
-});
-
 app.post('/api/enhance', requireUser, (req, res) => {
   const body = req.body || {};
   const slot = body.slot; // 'w' | 'a'
@@ -1648,9 +1624,13 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.lv = 1; p.xp = 0; p.nx = 30;
   // 환생 시 코인·장비 초기화 (특성/룬/환생코인/강화재료(items)는 유지)
   p.coin = 0;
-  p.w = 0; p.a = 0;
-  p.ow = [0]; p.oa = [0];
-  p.we = 0; p.ae = 0;
+  // 환생 전용 장비(환생의 검/영겁의 검, 환생의 갑옷/영겁의 갑옷)는 초기화하지 않고 유지
+  const RB_W = [19, 20], RB_A = [15, 16];
+  const keepOw = (Array.isArray(p.ow) ? p.ow : []).filter(v => RB_W.includes(v));
+  const keepOa = (Array.isArray(p.oa) ? p.oa : []).filter(v => RB_A.includes(v));
+  if (!RB_W.includes(p.w|0)) { p.w = 0; p.we = 0; }
+  if (!RB_A.includes(p.a|0)) { p.a = 0; p.ae = 0; }
+  p.ow = [0, ...keepOw]; p.oa = [0, ...keepOa];
   p.pot = [2, 0, 0, 0];
   p.mhp = 100;
   p.hp = p.mhp;
@@ -1937,6 +1917,45 @@ app.post('/api/rebirth/shop', requireUser, (req, res) => {
   res.json({ ok:true, rcoin:p.rcoin, items:p.items, pot:p.pot, w:p.w, a:p.a, ow:p.ow, oa:p.oa });
 });
 
+
+// ===== 은행원: 코인/재료 보관 =====
+const BANK_ITEM_CAP=999999, BANK_SLOTS=60;
+function bankView(p){return {coin:p.coin|0,items:p.items||{},bank:{coin:p.bank.coin|0,items:p.bank.items}};}
+app.get('/api/bank/info',requireUser,(req,res)=>{
+  const p=ensurePlayer(req.userKey);
+  res.json(bankView(p));
+});
+app.post('/api/bank/tx',requireUser,(req,res)=>{
+  const p=ensurePlayer(req.userKey);
+  const b=req.body||{};
+  if(inSafe(Number(p.x)||0,Number(p.z)||0)===false) return res.status(400).json({error:'은행은 시작 마을에서만 이용할 수 있어요.'});
+  const act=b.act, kind=b.kind;
+  let amt=Math.floor(Number(b.amount));
+  if(!Number.isFinite(amt)||amt<=0) return res.status(400).json({error:'수량이 올바르지 않습니다.'});
+  if(act!=='deposit'&&act!=='withdraw') return res.status(400).json({error:'요청이 올바르지 않습니다.'});
+  if(kind==='coin'){
+    if(act==='deposit'){
+      if(amt>p.coin) return res.status(400).json({error:'보유 코인이 부족합니다.'});
+      if(p.bank.coin+amt>1e9) return res.status(400).json({error:'은행 한도를 초과합니다.'});
+      p.coin-=amt;p.bank.coin+=amt;
+    }else{
+      if(amt>p.bank.coin) return res.status(400).json({error:'예금이 부족합니다.'});
+      if(p.coin+amt>1e9) return res.status(400).json({error:'보유 코인 한도를 초과합니다.'});
+      p.bank.coin-=amt;p.coin+=amt;
+    }
+  }else if(kind==='item'){
+    const id=String(b.id||'');
+    if(!/^[A-Za-z0-9_]{1,24}$/.test(id)) return res.status(400).json({error:'아이템이 올바르지 않습니다.'});
+    const from=act==='deposit'?p.items:p.bank.items, to=act==='deposit'?p.bank.items:p.items;
+    if((from[id]|0)<amt) return res.status(400).json({error:'수량이 부족합니다.'});
+    if(!(id in to)&&Object.keys(to).length>=(act==='deposit'?BANK_SLOTS:120)) return res.status(400).json({error:'보관함이 가득 찼습니다.'});
+    if((to[id]|0)+amt>BANK_ITEM_CAP) return res.status(400).json({error:'한도를 초과합니다.'});
+    from[id]-=amt; if(from[id]<=0) delete from[id];
+    to[id]=(to[id]|0)+amt;
+  }else return res.status(400).json({error:'요청이 올바르지 않습니다.'});
+  persistSoon();
+  res.json(bankView(p));
+});
 app.get('/healthz',(_req,res)=>res.json({ok:true, monsters:monsters.size}));
 app.use(express.static(path.join(__dirname,'public'),{index:'index.html',dotfiles:'deny',maxAge:'1h',setHeaders(res,p){if(p.endsWith('.html'))res.setHeader('Cache-Control','no-cache');res.setHeader('X-Content-Type-Options','nosniff');}}));
 app.use((err,_req,res,_next)=>{if(res.headersSent)return;res.status(400).json({error:'요청을 처리할 수 없습니다.'});});
@@ -2216,6 +2235,10 @@ if(m.type==='chat'){
       } else if(m.ch==='guild'){
         const g=ws._userKey?guildOfKey(ws._userKey):null; if(!g) return;
         guildSay(g,text,p.name);
+      } else {
+        // 전체 채널: 접속자 모두에게 전달 (말풍선용 id 포함), 전체 채널은 1.5초 간격 제한
+        if(now-(ws._chatAllT||0)<1500) return; ws._chatAllT=now;
+        broadcastAll({type:'chat',ch:'all',id:p.id,name:p.name,text});
       }
       return;
     }
