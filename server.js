@@ -133,25 +133,28 @@ const appLimiter=rateLimit({windowMs:60000,limit:300,standardHeaders:'draft-7',l
 const authLimiter=rateLimit({windowMs:15*60*1000,limit:12,standardHeaders:'draft-7',legacyHeaders:false,message:{error:'로그인/가입 시도가 너무 많습니다. 잠시 후 다시 시도하세요.'}});
 
 const SHOP_W = [
-  null, // 0 나무검 (기본)
+  null, // 0 나무검 (기본) — 클라이언트 WP 인덱스와 맞춤
   {name:'철검',cost:80},
-  {name:'강철검',cost:300},
-  {name:'미스릴검',cost:900},
-  {name:'용사검',cost:2500},
-  {name:'마검',cost:7000},
+  {name:'강철검',cost:200},
+  {name:'용사검',cost:600},
+  {name:'마검',cost:1500},
   {name:'드래곤 슬레이어',cost:18000},
   {name:'신검',cost:45000},
   {name:'천벌',cost:65000},
   {name:'흑염검',cost:80000},
   {name:'성역의 창',cost:100000},
   {name:'심연 도끼',cost:120000},
-  null, // 12 드래곤 검 (드롭)
-  null, // 13 월드의 검 (드롭)
+  null, // 11 드롭
+  null, // 12 드롭
   {name:'도적의 단검',cost:60000},
   {name:'번개검',cost:150000},
   {name:'서리 대검',cost:350000},
   {name:'지옥불 대검',cost:700000},
-  {name:'공허의 낫검',cost:1500000}
+  {name:'공허의 낫검',cost:1500000},
+  null, // 18 환생의 검 (환생 상점)
+  null, // 19 영겁의 검 (환생 상점)
+  {name:'천상의 성검',cost:25000000},
+  {name:'별빛 파멸검',cost:80000000}
 ];
 const SHOP_A = [
   null, // 0 천 옷
@@ -236,6 +239,12 @@ const ALLR = Object.values(ZONE_RECTS).flat();
 const AOI_RADIUS = 260;          // 이 거리 안의 몬스터 변화만 각 플레이어에게 전송
 const inSafe = (x, z) => Math.abs(x) <= 42 && Math.abs(z) <= 42; // 시작마을 전체(정사각형 ±24 + 여유) = 안전지대
 const VILLAGE_R = 18;            // 마을 반경 (몬스터 진입/공격 불가)
+// 수정 쉴드 보스 전용 격리 구역 (다른 몬스터 진입 불가)
+const BOSS_EXCLUSION = [
+  { x:760, z:-740, r:55 },   // worldboss arena
+  { x:-340, z:-500, r:55 }   // heavenlord
+];
+const nearBossExclusion = (x,z) => BOSS_EXCLUSION.some(b => Math.hypot(x-b.x,z-b.z) < b.r);
 
 // players / wsById 는 아래 WebSocket 섹션에서 채워집니다 (함수 안에서만 참조하므로 선언 순서 문제 없음)
 const monsters = new Map();      // id(number) -> monster
@@ -255,7 +264,8 @@ function pickPos(type) {
     for (const q of rs) { a -= (q[1] - q[0]) * (q[3] - q[2]); if (a <= 0) { r = q; break; } }
     const x = rnd(r[0] + 5, r[1] - 5), z = rnd(r[2] + 5, r[3] - 5);
     if (!inW(x, z)) continue;
-    if (BOSS_POS.some(b => Math.hypot(x - b[0], z - b[1]) < 22)) continue;
+    if (BOSS_POS.some(b => Math.hypot(x - b[0], z - b[1]) < 45)) continue; // 쉴드 보스 주변은 다른 몬스터 스폰 금지
+    if (!d.boss && nearBossExclusion(x, z)) continue;
     return [x, z];
   }
   const r = rs[0]; return [(r[0] + r[1]) / 2, (r[2] + r[3]) / 2];
@@ -452,7 +462,7 @@ function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 
 
 // ===== 보스 쉴드 / 그로기 / 장판 기믹 =====
 const BOSS_SHIELD_ELEMS = {}; // 일반 보스 원소 쉴드 제거: 수정 쉴드는 월드보스와 천상 군주 전용
-const WB_CRYSTALS = 4, WB_CRYSTAL_HP = 100000, WB_SHIELD_REGEN = 0.005;   // 월드보스: 수정 4개(각 10만), 쉴드 중 초당 0.5% 회복
+const WB_CRYSTALS = 4, WB_SHIELD_REGEN = 0.005;   // 수정 쉴드: 수정 4개(각 보스 최대체력 10%), 쉴드 중 초당 0.5% 회복
 const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', holy:'신성 쉴드', all:'만능 쉴드' };
 function maybeStartShield(m, d) {
   if (!d.boss || m.shield || (m.groggy && m.groggy > 0)) return;
@@ -470,7 +480,7 @@ function maybeStartShield(m, d) {
 function spawnCrystals(m, d, hpEach) {
   if (!d.boss) return;
   if (m.crystals && m.crystals.some(c => !c.dead)) return;
-  const n = (m.type === 'worldboss' || m.type === 'heavenlord') ? WB_CRYSTALS : 3;
+  const n = WB_CRYSTALS; // 수정 쉴드 보스는 항상 4개
   const sc = d.sc || 2;
   const list = [];
   for (let i = 0; i < n; i++) {
@@ -509,7 +519,7 @@ function tickBossGimmick(m, d, dt, now, alive) {
     if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
       m._wbDone = true;
       m.cast = null; m.floor = null;
-      const crHP = m.type === 'worldboss' ? WB_CRYSTAL_HP : Math.max(2000, Math.floor(m.mhp * 0.02));
+      const crHP = Math.max(1000, Math.floor(m.mhp * 0.10)); // 수정 1개 = 보스 최대체력 10%
       spawnCrystals(m, d, crHP);
       const tot = WB_CRYSTALS * crHP;
       m.shield = { elem:'all', hp:tot, mhp:tot, crystal:true };
@@ -818,6 +828,13 @@ function ensurePlayer(key){
   p.towerBest=Math.max(0,Math.min(9999,Math.floor(p.towerBest)));
   if(typeof p.towerDaily!=='number') p.towerDaily=0;
   if(typeof p.towerDailyAt!=='number') p.towerDailyAt=0;
+  if(typeof p.rstat!=='number'||!Number.isFinite(p.rstat)) p.rstat=0;
+  p.rstat=Math.max(0,Math.min(1e6,Math.floor(p.rstat)));
+  if(!p.rbMult||typeof p.rbMult!=='object') p.rbMult={atk:0,hp:0,exp:0,rcoin:0,rebirth:0,rstat:0};
+  for(const k of ['atk','hp','exp','rcoin','rebirth','rstat']){
+    if(typeof p.rbMult[k]!=='number'||!Number.isFinite(p.rbMult[k])) p.rbMult[k]=0;
+    p.rbMult[k]=Math.max(0,Math.min(30,Math.floor(p.rbMult[k])));
+  }
   return p;
 }
 function cleanState(input){
@@ -881,6 +898,13 @@ function cleanState(input){
  if(Number.isFinite(Number(p.towerBest))) player.towerBest=Math.max(0,Math.min(9999,Math.floor(Number(p.towerBest))));
  if(Number.isFinite(Number(p.towerDaily))) player.towerDaily=Math.max(0,Math.floor(Number(p.towerDaily)));
  if(Number.isFinite(Number(p.towerDailyAt))) player.towerDailyAt=Math.floor(Number(p.towerDailyAt));
+ if(Number.isFinite(Number(p.rstat))) player.rstat=Math.max(0,Math.min(1e6,Math.floor(Number(p.rstat))));
+ if(p.rbMult&&typeof p.rbMult==='object'&&!Array.isArray(p.rbMult)){
+  const rm={}; for(const k of ['atk','hp','exp','rcoin','rebirth','rstat']){
+    const v=Number(p.rbMult[k]); if(Number.isFinite(v)) rm[k]=Math.max(0,Math.min(30,Math.floor(v)));
+  }
+  player.rbMult=rm;
+ }
  if(Array.isArray(p.sbk)) player.sbk=p.sbk.filter(v=>typeof v==='string'&&/^[A-Za-z0-9_]{1,32}$/.test(v)).slice(0,60);
  if(Array.isArray(p.sks)) player.sks=p.sks.filter(v=>typeof v==='string'&&v.length>0&&v.length<=24).slice(0,8);
  if(p.look&&typeof p.look==='object'&&!Array.isArray(p.look)){const lk={};for(const k of['skin','hair','hs','hat','cape','wing','halo','glass','aura','shirt','pants','boot','face','tail']){const v=Number(p.look[k]);if(Number.isFinite(v)&&v>=0&&v<=0xffffff)lk[k]=Math.floor(v);}player.look=lk;}
@@ -917,9 +941,17 @@ app.post('/api/save',requireUser,(req,res)=>{
   const prev = db.states[req.userKey] && db.states[req.userKey].player;
   if(prev){
     const np = state.player;
-    // 서버에서 이미 올린 코인/장비가 클라이언트보다 높으면 유지 (구매 직후 덮어쓰기 방지)
-    if(typeof prev.coin==='number' && typeof np.coin==='number' && prev.coin > np.coin && (prev.coin - np.coin) < 50) {
-      /* small lag ok, trust client */
+    // ★ 코인 롤백 방지: 서버 값이 더 크면 서버 유지
+    if(typeof prev.coin==='number' && typeof np.coin==='number' && prev.coin > np.coin){
+      np.coin = prev.coin;
+    }
+    if((prev.rcoin|0) > (np.rcoin|0)) np.rcoin = prev.rcoin|0;
+    if((prev.rstat|0) > (np.rstat|0)) np.rstat = prev.rstat|0;
+    if(prev.rbMult && typeof prev.rbMult==='object'){
+      if(!np.rbMult) np.rbMult={};
+      for(const k of ['atk','hp','exp','rcoin','rebirth','rstat']){
+        if((prev.rbMult[k]|0) > (np.rbMult[k]|0)) np.rbMult[k] = prev.rbMult[k]|0;
+      }
     }
     // ow/oa 합집합
     if(Array.isArray(prev.ow) && Array.isArray(np.ow)){
@@ -934,11 +966,17 @@ app.post('/api/save',requireUser,(req,res)=>{
     }
   }
   if(prev&&prev.bank) state.player.bank=prev.bank;
+  if(prev){
+    if(prev.rstat!=null && state.player.rstat==null) state.player.rstat=prev.rstat;
+    if(prev.rbMult && !state.player.rbMult) state.player.rbMult=prev.rbMult;
+    if(prev.rcoin!=null && state.player.rcoin==null) state.player.rcoin=prev.rcoin;
+    if(prev.rebirth!=null && state.player.rebirth==null) state.player.rebirth=prev.rebirth;
+  }
   db.states[req.userKey]=state;
   persistSoon();
   res.json({ok:true,savedAt:state.savedAt});
 });
-app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv&&pv.bank)state.player.bank=pv.bank;}db.states[key]=state;persistSoon();res.status(204).end();});
+app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv){if(pv.bank)state.player.bank=pv.bank;if(typeof pv.coin==='number'&&typeof state.player.coin==='number'&&pv.coin>state.player.coin)state.player.coin=pv.coin;if((pv.rcoin|0)>(state.player.rcoin|0))state.player.rcoin=pv.rcoin|0;if((pv.rstat|0)>(state.player.rstat|0))state.player.rstat=pv.rstat|0;}}db.states[key]=state;persistSoon();res.status(204).end();});
 app.post('/api/logout',(req,res)=>{clearCookie(req,res);res.json({ok:true});});
 
 app.post('/api/buy', requireUser, (req, res) => {
@@ -1619,13 +1657,17 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   const p = ensurePlayer(req.userKey);
   if ((p.lv|0) < REBIRTH_MIN_LV) return res.status(400).json({ error: '환생은 Lv.'+REBIRTH_MIN_LV+' 이상부터 가능합니다.', need: REBIRTH_MIN_LV, lv: p.lv });
   p.rebirth = (p.rebirth|0) + 1;
-  p.rcoin = (p.rcoin|0) + (10 + p.rebirth * 5);
+  // 환생 코인: 5*환생횟수 (1회=5, 2회=10…) / 환생 스탯: 항상 +1 (rbMult 배율 적용)
+  const rcoinGain = Math.floor(5 * p.rebirth * Math.pow(2, (p.rbMult&&p.rbMult.rcoin)|0));
+  const rstatGain = Math.floor(1 * Math.pow(2, (p.rbMult&&p.rbMult.rstat)|0));
+  p.rcoin = (p.rcoin|0) + rcoinGain;
+  p.rstat = (p.rstat|0) + rstatGain;
   p.title = REBIRTH_TITLES[Math.min(REBIRTH_TITLES.length-1, p.rebirth)] || '환생자';
   p.lv = 1; p.xp = 0; p.nx = 30;
   // 환생 시 코인·장비 초기화 (특성/룬/환생코인/강화재료(items)는 유지)
   p.coin = 0;
   // 환생 전용 장비(환생의 검/영겁의 검, 환생의 갑옷/영겁의 갑옷)는 초기화하지 않고 유지
-  const RB_W = [19, 20], RB_A = [15, 16];
+  const RB_W = [18, 19, 20, 21], RB_A = [15, 16]; // 환생/영겁/천상 무기 유지
   const keepOw = (Array.isArray(p.ow) ? p.ow : []).filter(v => RB_W.includes(v));
   const keepOa = (Array.isArray(p.oa) ? p.oa : []).filter(v => RB_A.includes(v));
   if (!RB_W.includes(p.w|0)) { p.w = 0; p.we = 0; }
@@ -1639,9 +1681,52 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   try { persist(); } catch(e) {}
   pushAdminStat(req.userKey, { lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin });
   res.json({
-    ok:true, rebirth:p.rebirth, rcoin:p.rcoin, title:p.title,
+    ok:true, rebirth:p.rebirth, rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
     lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts,
     coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
+  });
+});
+
+// ===== 환생 스탯 업그레이드 =====
+// 배율 = 2^level, 비용 = base * 2^level (업글할 때마다 2배)
+const RSTAT_DEFS = {
+  atk:     { name:'공격력 2배', base:1 },
+  hp:      { name:'체력 2배', base:1 },
+  exp:     { name:'경험치 2배', base:1 },
+  rcoin:   { name:'환생 코인 2배', base:4 },
+  rebirth: { name:'환생 횟수 효과 2배', base:4 },
+  rstat:   { name:'환생 스탯 2배', base:6 }
+};
+function rstatCost(id, level){
+  const d = RSTAT_DEFS[id]; if(!d) return null;
+  return d.base * Math.pow(2, level|0);
+}
+app.get('/api/rebirth/stat/info', requireUser, (req, res) => {
+  const p = ensurePlayer(req.userKey);
+  const info = {};
+  for(const [id,d] of Object.entries(RSTAT_DEFS)){
+    const lv = (p.rbMult&&p.rbMult[id])|0;
+    info[id] = { name:d.name, level:lv, mult:Math.pow(2,lv), cost:rstatCost(id,lv), nextMult:Math.pow(2,lv+1) };
+  }
+  res.json({ ok:true, rstat:p.rstat|0, rbMult:p.rbMult||{}, info });
+});
+app.post('/api/rebirth/stat', requireUser, (req, res) => {
+  const id = String((req.body&&req.body.id)||'');
+  if(!RSTAT_DEFS[id]) return res.status(400).json({ error:'존재하지 않는 환생 스탯입니다.' });
+  const p = ensurePlayer(req.userKey);
+  if(!p.rbMult) p.rbMult={atk:0,hp:0,exp:0,rcoin:0,rebirth:0,rstat:0};
+  const lv = p.rbMult[id]|0;
+  if(lv >= 20) return res.status(400).json({ error:'최대 레벨입니다.' });
+  const cost = rstatCost(id, lv);
+  if((p.rstat|0) < cost) return res.status(400).json({ error:'환생 스탯이 부족합니다.', need:cost, have:p.rstat|0 });
+  p.rstat = (p.rstat|0) - cost;
+  p.rbMult[id] = lv + 1;
+  db.states[req.userKey].savedAt = Date.now();
+  try { persist(); } catch(e) {}
+  res.json({
+    ok:true, id, level:p.rbMult[id], mult:Math.pow(2,p.rbMult[id]),
+    rstat:p.rstat, rbMult:p.rbMult,
+    nextCost: rstatCost(id, p.rbMult[id])
   });
 });
 
@@ -1870,7 +1955,7 @@ app.get('/api/tower/info', requireUser, (req, res) => {
   const p = ensurePlayer(req.userKey);
   const day = Math.floor(Date.now()/86400000);
   res.json({
-    towerBest: p.towerBest|0, rebirth: p.rebirth|0, rcoin: p.rcoin|0, title: p.title||'',
+    towerBest: p.towerBest|0, rebirth: p.rebirth|0, rcoin: p.rcoin|0, rstat: p.rstat|0, rbMult: p.rbMult||{}, title: p.title||'',
     talentPts: Math.max(0, expectedTalentPts(p) - talentSpent(p.talents)),
     talents: p.talents||{}, runes: p.runes||[], runeEq: p.runeEq||{},
     dailyClaimed: (p.towerDailyAt|0)===day, nextFloor: (p.towerBest|0)+1,
@@ -1884,8 +1969,8 @@ const RSHOP = [
   { id:'rpot', name:'환생 엘릭서 x3', cost:15, type:'pot', n:3 },
   { id:'rboost', name:'영구 공격 +5%', cost:50, type:'perm', key:'rAtk' },
   { id:'rhp', name:'영구 체력 +5%', cost:50, type:'perm', key:'rHp' },
-  { id:'rsword1', name:'환생의 검', cost:40, type:'w', index:19 },
-  { id:'rsword2', name:'영겁의 검', cost:100, type:'w', index:20 },
+  { id:'rsword1', name:'환생의 검', cost:40, type:'w', index:18 },
+  { id:'rsword2', name:'영겁의 검', cost:100, type:'w', index:19 },
   { id:'rarmor1', name:'환생의 갑옷', cost:40, type:'a', index:15 },
   { id:'rarmor2', name:'영겁의 갑옷', cost:100, type:'a', index:16 }
 ];
