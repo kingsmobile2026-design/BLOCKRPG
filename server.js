@@ -208,11 +208,11 @@ const QUESTS = {
   hxp3:{name:'하급 천사의 시련',need:20,coin:15000,xp:300000},
   hxp4:{name:'천상 기사의 시련',need:15,coin:20000,xp:400000},
   hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000},
-  god_c1:{name:'구름 사신 토벌',need:5,coin:2400000,xp:9000000},
-  god_c2:{name:'천뢰 기사 격파',need:3,coin:3600000,xp:13000000},
-  god_c3:{name:'성천 뱀 사냥',need:2,coin:4800000,xp:17000000},
-  god_c4:{name:'신역 수호자 처치',need:1,coin:12000000,xp:36000000},
-  god_c5:{name:'제우스 토벌',need:1,coin:15000000,xp:44000000}
+  god_c1:{name:'구름 사신 토벌',need:5,coin:240000,xp:450000},
+  god_c2:{name:'천뢰 기사 격파',need:3,coin:360000,xp:650000},
+  god_c3:{name:'성천 뱀 사냥',need:2,coin:480000,xp:850000},
+  god_c4:{name:'신역 수호자 처치',need:1,coin:1200000,xp:1800000},
+  god_c5:{name:'제우스 토벌',need:1,coin:1500000,xp:2200000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
@@ -276,7 +276,7 @@ WORLD.BOSS.abysslord=[-440,-570];
 WORLD.ZD.god = [[820,1060,-1200,-900]]; // 절벽 없이 구름 섬이 흩어진 하늘 지역
 WORLD.ZD.godarena = [[835,975,-1190,-1115]]; // 신들의 결투장 전용 스폰 구역
 Object.assign(WORLD.MT, {
-  zeus:{hp:60000000,dmg:20000,xp:5000000,g:2500000,sp:6.5,reach:8,rt:900,sc:4.8,n:1,ag:80,cd:2.2,boss:1,fix:[980,-1080],nm:'제우스'}
+  zeus:{hp:40000000,dmg:7500,xp:5000000,g:2500000,sp:6.5,reach:8,rt:900,sc:4.8,n:1,ag:80,cd:2.2,boss:1,fix:[980,-1080],nm:'제우스'}
 });
 Object.assign(WORLD.ZT, {zeus:'god'});
 WORLD.BOSS.zeus=[980,-1080];
@@ -540,7 +540,8 @@ function sendNear(x, z, obj, range = AOI_RADIUS + 60) {
   }
 }
 function bossHit(m, p, dmg, now) {
-  if (inSafe(p.x, p.z)) return;                // 마을 안에서는 어떤 공격도 무효
+  if (inSafe(p.x, p.z)) return;
+  if (p.job === 'deathgod' && p.deathSkills && Number(p.deathSkills.evadeUntil) > now) dmg = Math.max(1, Math.floor(dmg * 0.1));                // 마을 안에서는 어떤 공격도 무효
   if ((p.invTill || 0) > now) return;          // 대쉬/무적 중이면 회피 성공
   p.invTill = now + 400;
   const w = wsById.get(p.id);
@@ -753,14 +754,14 @@ function tickMonsters(dt, now) {
       if (m.type === 'worldboss' || m.type === 'zeus') m.stun = 0;
       else { m.stun -= dt; if (m.stun > 0) stunned = true; else { m.stun = 0; m.ver++; } }
     }
-    // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 10,000 감소
+    // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 2,000 감소
     if (m.type === 'zeus') {
       m._lightningT = (m._lightningT == null ? rnd(3,5) : m._lightningT) - dt;
       if (m._lightningT <= 0) {
         m._lightningT = rnd(3.5,6.5);
         const lx=rnd(835,1045), lz=rnd(-1180,-920);
-        sendNear(lx,lz,{type:'zeus_lightning',x:lx,z:lz,r:4,dmg:10000},AOI_RADIUS+60);
-        for (const pl of alive) if (pl.x>=820&&pl.x<=1060&&pl.z>=-1200&&pl.z<=-900&&Math.hypot(pl.x-lx,pl.z-lz)<=4) bossHit(m,pl,10000,now);
+        sendNear(lx,lz,{type:'zeus_lightning',x:lx,z:lz,r:4,dmg:2000},AOI_RADIUS+60);
+        for (const pl of alive) if (pl.x>=820&&pl.x<=1060&&pl.z>=-1200&&pl.z<=-900&&Math.hypot(pl.x-lx,pl.z-lz)<=4) bossHit(m,pl,2000,now);
       }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
@@ -894,7 +895,7 @@ function seedAdmin(){
 
 function ensurePlayer(key){
   if(!db.states[key] || !db.states[key].player){
-    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{},godUnlocked:false,hadesSword:false,godQuestAccepted:false,godQuestDone:false},camera:{},savedAt:Date.now()};
+    db.states[key]={version:1,player:{x:0,z:8,y:0,hp:100,mhp:100,lv:1,xp:0,nx:30,coin:0,at:0,face:0,inv:0,w:0,a:0,pot:[2,0,0,0],rg:0,ow:[0],oa:[0],qa:{},qd:[],questProgress:{},godUnlocked:false,hadesSword:false,godQuestAccepted:false,godQuestDone:false,deathSkills:{guide:false,scythe:false,evadeUntil:0,spears:false,soul:false},deathLives:2,deathReborn:false},camera:{},savedAt:Date.now()};
   }
   const p=db.states[key].player;
   if(!Array.isArray(p.pot)) p.pot=[2,0,0,0];
@@ -911,10 +912,15 @@ function ensurePlayer(key){
   p.ae=Math.max(0,Math.min(15,Math.floor(p.ae)));
   if(!p.items||typeof p.items!=='object') p.items={};
   if(typeof p.rebirth!=='number'||!Number.isFinite(p.rebirth)) p.rebirth=0;
-  p.rebirth=Math.max(0,Math.min(99,Math.floor(p.rebirth)));
+  p.rebirth=Math.max(0,Math.min(1000000,Math.floor(p.rebirth)));
   if(typeof p.rcoin!=='number'||!Number.isFinite(p.rcoin)) p.rcoin=0;
   p.rcoin=Math.max(0,Math.min(1e9,Math.floor(p.rcoin)));
   if(typeof p.title!=='string') p.title='';
+  if(!p.deathSkills||typeof p.deathSkills!=='object') p.deathSkills={};
+  p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul};
+  p.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives==null?2:p.deathLives)||0)));
+  p.deathReborn=!!p.deathReborn;
+  if(p.rebirth>=500){p.job='deathgod';p.deathLives=Math.max(1,p.deathLives);}
   if(!p.bank||typeof p.bank!=='object') p.bank={coin:0,items:{}};
   if(typeof p.bank.coin!=='number'||!Number.isFinite(p.bank.coin)) p.bank.coin=0;
   if(!p.bank.items||typeof p.bank.items!=='object') p.bank.items={};
@@ -990,9 +996,13 @@ function cleanState(input){
  if(Number.isFinite(Number(p.jhp))) player.jhp=Math.max(0.1,Math.min(5,Number(p.jhp)));
  if(Number.isFinite(Number(p.we))) player.we=Math.max(0,Math.min(15,Math.floor(Number(p.we))));
  if(Number.isFinite(Number(p.ae))) player.ae=Math.max(0,Math.min(15,Math.floor(Number(p.ae))));
- if(Number.isFinite(Number(p.rebirth))) player.rebirth=Math.max(0,Math.min(99,Math.floor(Number(p.rebirth))));
+ if(Number.isFinite(Number(p.rebirth))) player.rebirth=Math.max(0,Math.min(1000000,Math.floor(Number(p.rebirth))));
  if(Number.isFinite(Number(p.rcoin))) player.rcoin=Math.max(0,Math.min(1e9,Math.floor(Number(p.rcoin))));
  if(typeof p.title==='string') player.title=String(p.title).slice(0,24);
+ if(p.deathSkills&&typeof p.deathSkills==='object'&&!Array.isArray(p.deathSkills)){const ds=p.deathSkills;player.deathSkills={guide:!!ds.guide,scythe:!!ds.scythe,evadeUntil:Math.max(0,Math.floor(Number(ds.evadeUntil)||0)),spears:!!ds.spears,soul:!!ds.soul};}
+ if(Number.isFinite(Number(p.deathLives))) player.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives))));
+ if(p.deathReborn===true) player.deathReborn=true;
+ if(Number(p.rebirth)>=500){player.job='deathgod';player.deathLives=Math.max(1,player.deathLives==null?2:player.deathLives);}
  if(p.talents&&typeof p.talents==='object'&&!Array.isArray(p.talents)){
   const t={}; for(const [k,v] of Object.entries(p.talents)){ if(/^[a-z0-9_]{1,16}$/.test(k)&&Number.isInteger(v)&&v>=0&&v<=10) t[k]=v; }
   player.talents=t;
@@ -1834,6 +1844,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.pot = [2, 0, 0, 0];
   if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
   p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
+  if(p.rebirth >= 500){ p.job='deathgod'; p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false}; p.title='죽음의 신'; }
   // 환생해도 누적된 최대 체력/환생 스탯 보너스는 유지
   p.mhp = Math.max(100, Math.floor(Number(p.mhp)||100));
   p.hp = p.mhp;
