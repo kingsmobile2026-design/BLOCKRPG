@@ -158,7 +158,12 @@ const SHOP_W = [
   {name:'별빛 파멸검',cost:18000000},   // 22
   {name:'성역의 심판검',cost:22000000}, // 23
   {name:'천계의 창',cost:26000000},     // 24
-  {name:'성운의 별검',cost:42000000}    // 25 신규 천상 상인 무기
+  {name:'성운의 별검',cost:42000000},   // 25 신규 천상 상인 무기
+  {name:'신들의 심판검',cost:24000000},  // 26 신기 상인
+  {name:'천뢰의 파멸검',cost:36000000},  // 27
+  {name:'창세의 신검',cost:44000000},    // 28
+  {name:'천상천하의 창',cost:52000000},  // 29
+  {name:'신성한 성운검',cost:84000000}     // 30: 성운의 별검 가격의 2배
 ];
 const SHOP_A = [
   null, // 0 천 옷
@@ -181,7 +186,11 @@ const SHOP_A = [
   {name:'천상의 갑옷',cost:10000000},   // 17
   {name:'별빛 갑옷',cost:15000000},     // 18
   {name:'성역의 갑옷',cost:20000000},   // 19
-  {name:'천계 수호갑',cost:25000000}    // 20 — 월드 갑옷급 바로 아래
+  {name:'천계 수호갑',cost:25000000},   // 20 — 월드 갑옷급 바로 아래
+  {name:'신들의 성갑',cost:20000000},     // 21 신기 상인
+  {name:'천뢰의 갑주',cost:30000000},     // 22
+  {name:'창세의 신갑',cost:40000000},     // 23
+  {name:'천상천하의 갑옷',cost:50000000} // 24
 ];
 const SHOP_P = [{name:'체력 물약',cost:15},{name:'고급 물약',cost:45},{name:'대형 물약',cost:120},{name:'엘릭서',cost:500}];
 const QUESTS = {
@@ -198,7 +207,12 @@ const QUESTS = {
   hxp2:{name:'빛의 정령 정화',need:15,coin:10000,xp:180000},
   hxp3:{name:'하급 천사의 시련',need:20,coin:15000,xp:300000},
   hxp4:{name:'천상 기사의 시련',need:15,coin:20000,xp:400000},
-  hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000}
+  hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000},
+  god_c1:{name:'구름 사신 토벌',need:5,coin:2400000,xp:4500000},
+  god_c2:{name:'천뢰 기사 격파',need:3,coin:3600000,xp:6500000},
+  god_c3:{name:'성천 뱀 사냥',need:2,coin:4800000,xp:8500000},
+  god_c4:{name:'신역 수호자 처치',need:1,coin:12000000,xp:18000000},
+  god_c5:{name:'제우스 토벌',need:1,coin:15000000,xp:22000000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
@@ -265,6 +279,15 @@ Object.assign(WORLD.MT, {
 });
 Object.assign(WORLD.ZT, {zeus:'god'});
 WORLD.BOSS.zeus=[980,-1080];
+// 신(GOD) 지역 추가 몬스터 — 최상위 난이도 ★★★★★★★★
+Object.assign(WORLD.MT, {
+  cloudreaper:{hp:3800000,dmg:6800,xp:900000,g:480000,sp:7.5,reach:4.2,rt:20,sc:2.2,n:5,ag:42,cd:1.6,nm:'구름 사신'},
+  thunderknight:{hp:6200000,dmg:8200,xp:1400000,g:720000,sp:5.8,reach:4.0,rt:22,sc:2.6,n:4,ag:46,cd:1.8,nm:'천뢰 기사'},
+  astralserpent:{hp:8500000,dmg:9600,xp:1900000,g:950000,sp:8.2,reach:4.8,rt:24,sc:2.8,n:3,ag:50,cd:1.7,nm:'성천 뱀'},
+  godsentinel:{hp:72000000,dmg:12500,xp:12000000,g:6000000,sp:5.2,reach:9,rt:900,sc:5.2,n:1,ag:90,cd:2.1,boss:1,fix:[1030,-1130],nm:'신역 수호자'}
+});
+Object.assign(WORLD.ZT,{cloudreaper:'god',thunderknight:'god',astralserpent:'god',godsentinel:'god'});
+WORLD.BOSS.godsentinel=[1030,-1130];
 // ===== /신(GOD) 지역 =====
 
 // ===== 성운 지역 (신규 지역: 별빛 섬) =====
@@ -355,7 +378,7 @@ function monsterSnapshot() { return [...monsters.values()].map(monsterFull); }
 // 플레이어가 몬스터를 타격 (클라이언트가 보고한 피해량 — 거리/빈도/상한을 서버가 검증)
 // ★ 보스 밸런스: 무기가 아무리 강해도 보스는 "한 번에 / 1초에" 받는 피해에 상한이 있다.
 //   BOSS_CAP[type] = 한 명이 최대 딜로 때려도 최소 이만큼(초)은 걸려야 잡히는 시간.
-const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200 };
+const BOSS_CAP = { kingslime:15, wolfalpha:20, goblinking:30, lich:40, frostgiant:50, pharaoh:60, hydra:70, balrog:80, dragon:75, demonlord:100, worldboss:400, archangel:90, heavenlord:150, zeus:1200, godsentinel:1600 }
 const BOSS_CAP_SCALE = 0.5;   // ★ 보스 최소 처치시간 배율 (1=원래, 0.5=절반 → 상한 DPS 2배, 0.25=4배). 보스가 너무 안 닳으면 낮추세요
 const WB_TEAM_CAP = 0.015;   // 월드 보스: 전체 플레이어 합산 초당 최대 1.5% (최소 약 67초)
 function bossLimit(m, d, ws, dmg) {
@@ -1132,9 +1155,10 @@ app.post('/api/quest/accept', requireUser, (req, res) => {
   const { questId } = req.body || {};
   if (typeof questId !== 'string' || !/^[A-Za-z0-9_-]{1,24}$/.test(questId)) return res.status(400).json({ error: '존재하지 않는 퀘스트입니다.' });
   const player = ensurePlayer(req.userKey);
-  if (player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
+  const repeatableGodQuest = questId.startsWith('god_') && !!QUESTS[questId];
+  if (!repeatableGodQuest && player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
   if (player.qa[questId] !== undefined) return res.status(400).json({ error: '이미 수락한 퀘스트입니다.' });
-  if (Object.keys(player.qa).length >= 5) return res.status(400).json({ error: '퀘스트는 동시에 5개까지 받을 수 있습니다.' });
+  if (!repeatableGodQuest && Object.keys(player.qa).length >= 5) return res.status(400).json({ error: '퀘스트는 동시에 5개까지 받을 수 있습니다.' });
   player.qa[questId] = 0; player.questProgress[questId] = 0;
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); res.json({ ok:true, questId, qa:player.qa }); } catch(e){ res.status(500).json({ error:'저장 실패' }); }
@@ -1157,7 +1181,8 @@ app.post('/api/quest/complete', requireUser, (req, res) => {
   if (typeof questId !== 'string' || !/^[A-Za-z0-9_-]{1,24}$/.test(questId)) return res.status(400).json({ error: '존재하지 않는 퀘스트입니다.' });
   const player = ensurePlayer(req.userKey);
   if (player.qa[questId] === undefined) return res.status(400).json({ error: '수락하지 않은 퀘스트입니다.' });
-  if (player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
+  const repeatableGodQuest = questId.startsWith('god_') && !!QUESTS[questId];
+  if (!repeatableGodQuest && player.qd.includes(questId)) return res.status(400).json({ error: '이미 완료한 퀘스트입니다.' });
   const def = QUESTS[questId];
   const needN = def ? def.need : (Number.isInteger(need) ? Math.min(100000, Math.max(1, need)) : 1);
   const coinR = def ? def.coin : Math.max(0, Math.min(1e7, Math.floor(Number(rewardCoin) || 0)));
@@ -1167,7 +1192,7 @@ app.post('/api/quest/complete', requireUser, (req, res) => {
   player.coin = (player.coin || 0) + coinR;
   player.xp = (player.xp || 0) + xpR;
   delete player.qa[questId];
-  if (!player.qd.includes(questId)) player.qd.push(questId);
+  if (!repeatableGodQuest && !player.qd.includes(questId)) player.qd.push(questId);
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); res.json({ ok:true, questId, reward:{coin:coinR,xp:xpR}, coin:player.coin, xp:player.xp, qa:player.qa, qd:player.qd }); }
   catch(e){ res.status(500).json({ error:'저장 실패' }); }
