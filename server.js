@@ -1078,7 +1078,7 @@ function ensurePlayer(key){
   if(!Array.isArray(p.unlockedTitles)) p.unlockedTitles=[];
   if(typeof p.equippedTitle!=='string') p.equippedTitle='';
   if(!p.deathSkills||typeof p.deathSkills!=='object') p.deathSkills={};
-  p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul,evadeCd:Math.max(0,Math.floor(Number(p.deathSkills.evadeCd)||0))};
+  p.deathSkills={guide:!!p.deathSkills.guide,scythe:!!p.deathSkills.scythe,evadeUntil:Math.max(0,Math.floor(Number(p.deathSkills.evadeUntil)||0)),spears:!!p.deathSkills.spears,soul:!!p.deathSkills.soul,harvest:!!p.deathSkills.harvest,execution:!!p.deathSkills.execution,executionUntil:Math.max(0,Math.floor(Number(p.deathSkills.executionUntil)||0)),evadeCd:Math.max(0,Math.floor(Number(p.deathSkills.evadeCd)||0))};
   p.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives==null?2:p.deathLives)||0)));
   p.deathReborn=!!p.deathReborn;
   p.deathCutsceneDone=!!p.deathCutsceneDone; if(p.rebirth>=500){p.job='deathgod';}
@@ -1198,7 +1198,7 @@ function cleanState(input){
  if(Number.isFinite(Number(p.rebirth))) player.rebirth=Math.max(0,Math.min(1000000,Math.floor(Number(p.rebirth))));
  if(Number.isFinite(Number(p.rcoin))) player.rcoin=Math.max(0,Math.min(1e9,Math.floor(Number(p.rcoin))));
  if(typeof p.title==='string') player.title=String(p.title).slice(0,24);
- if(p.deathSkills&&typeof p.deathSkills==='object'&&!Array.isArray(p.deathSkills)){const ds=p.deathSkills;player.deathSkills={guide:!!ds.guide,scythe:!!ds.scythe,evadeUntil:Math.max(0,Math.floor(Number(ds.evadeUntil)||0)),spears:!!ds.spears,soul:!!ds.soul,evadeCd:Math.max(0,Math.floor(Number(ds.evadeCd)||0))};}
+ if(p.deathSkills&&typeof p.deathSkills==='object'&&!Array.isArray(p.deathSkills)){const ds=p.deathSkills;player.deathSkills={guide:!!ds.guide,scythe:!!ds.scythe,evadeUntil:Math.max(0,Math.floor(Number(ds.evadeUntil)||0)),spears:!!ds.spears,soul:!!ds.soul,harvest:!!ds.harvest,execution:!!ds.execution,executionUntil:Math.max(0,Math.floor(Number(ds.executionUntil)||0)),evadeCd:Math.max(0,Math.floor(Number(ds.evadeCd)||0))};}
  if(Number.isFinite(Number(p.deathLives))) player.deathLives=Math.max(0,Math.min(2,Math.floor(Number(p.deathLives))));
  if(p.deathReborn===true) player.deathReborn=true;
  if(Number(p.rebirth)>=500){player.job='deathgod';player.deathLives=Math.max(1,player.deathLives==null?2:player.deathLives);}
