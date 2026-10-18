@@ -1283,14 +1283,14 @@ app.post('/api/admin/magesword', requireAdmin, (req,res)=>{
   if(typeof username!=='string'||!username.trim()) return res.status(400).json({error:'닉네임이 필요합니다.'});
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
-  const p=ensurePlayer(key); p.job='magesword'; p.msUnlocked=true; p.jstep=0; p.jm=1.3; p.jhp=1.6;
+  const p=ensurePlayer(key); p.job='magesword'; p.msUnlocked=true; p.jstep=0.34; p.jm=1.3; p.jhp=1.6; p.godUnlocked=true;
   if(!db.states[key]) db.states[key]={version:1,player:p,camera:{},savedAt:Date.now()};
   db.states[key].player=p; db.states[key].savedAt=Date.now();
   try{persist();}catch(e){return res.status(500).json({error:'저장 실패'});}
   let online=false;
   for(const ws of wss.clients){ if(ws._userKey===key&&ws.readyState===WebSocket.OPEN){online=true;try{ws.send(JSON.stringify({type:'admin_action',action:'magesword'}));}catch{}} }
-  for(const pl of players.values()) if(pl.key===key) pl.job='magesword';
-  res.json({ok:true,username:db.users[key].username,online,job:p.job,msUnlocked:true});
+  for(const pl of players.values()) if(pl.key===key){pl.job='magesword';pl.msUnlocked=true;pl.godUnlocked=true;}
+  res.json({ok:true,username:db.users[key].username,online,job:p.job,msUnlocked:true,godUnlocked:true});
 });
 
 app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
