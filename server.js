@@ -437,9 +437,9 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   if (p.hp <= 0) return;
   const d = MT[m.type];
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
-  if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
+  if (elem !== 'scythethrow' && dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
-  if (elem !== 'spear') p.lastHit = dmg;                       // 죽음의 창 기준 데미지(클라가 bd 를 안 보낼 때 대체값)
+  if (elem !== 'spear' && elem !== 'scythethrow') p.lastHit = dmg;                       // 죽음의 창 기준 데미지(클라가 bd 를 안 보낼 때 대체값)
   if (deathOn(p, 'scythe')) dmg = Math.floor(dmg * DEATH_SCYTHE_MULT);   // 죽음의 낫: 데미지 5배
   if (false && m.shield && m.shield.crystal) {   // 보스 쉴드 비활성화
     if (Date.now() - (ws._shT || 0) > 800) {
@@ -548,7 +548,7 @@ const DEATH_EVADE_MS = 60000, DEATH_EVADE_CD = 120000, DEATH_EVADE_MULT = 0.1;  
 const DEATH_SPEAR_COUNT = 15, DEATH_SPEAR_RANGE = 20, DEATH_SPEAR_RATE = 0.15, DEATH_SPEAR_INTERVAL = 600;
 const DEATH_MAX_LIVES = 2, DEATH_REVIVE_INV_MS = 4000;
 const DEATH_SOUL_SPEED = 3;                         // 영혼 모드 이동속도 배율 (대쉬 불가)
-const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 6:'soul', 7:'harvest', 8:'execution', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul', harvest:'harvest', execution:'execution' };
+const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 5:'throw', 6:'soul', 7:'harvest', 8:'execution', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul', harvest:'harvest', execution:'execution' };
 
 function deathSt(p) {   // 죽음의 신이면 DB 플레이어 객체, 아니면 null
   if (!p || !p.key) return null;
@@ -627,8 +627,42 @@ function deathSpearsAttack(p, ws) {
   if (one < 1) return;
   for (const [m, n] of per) applyPlayerHit(p, ws, m.id, one * n, 0, 'spear');
 }
+// 죽음의 낫 던지기(5번): 회전하는 낫이 150m 날아가며 경로(폭 THROW_WIDTH)의 모든 몬스터를 1회씩 타격, 데미지 = 내 기본 데미지 x10
+const DEATH_THROW_RANGE = 150, DEATH_THROW_SPEED = 90, DEATH_THROW_WIDTH = 7, DEATH_THROW_MULT = 10, DEATH_THROW_CD = 30000;
+const deathThrows = [];
+function deathThrowStart(p, ws, face, now) {
+  const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  if (base < 1) return false;
+  const dx = Math.sin(face), dz = Math.cos(face);
+  deathThrows.push({ p, ws, x0: p.x, z0: p.z, dx, dz, t0: now, prev: 0, base, hit: new Set() });
+  sendNear(p.x, p.z, { type: 'death_throw', id: p.id, x: q2(p.x), z: q2(p.z), dx, dz, range: DEATH_THROW_RANGE, speed: DEATH_THROW_SPEED }, 200);
+  return true;
+}
+function tickDeathThrows(now) {
+  for (let i = deathThrows.length - 1; i >= 0; i--) {
+    const t = deathThrows[i];
+    const cur = Math.min(DEATH_THROW_RANGE, (now - t.t0) / 1000 * DEATH_THROW_SPEED);
+    const p = t.p;
+    if (!p || p.hp <= 0 || t.ws.readyState !== WebSocket.OPEN) { deathThrows.splice(i, 1); continue; }
+    const mult = deathOn(p, 'scythe') ? 1 / DEATH_SCYTHE_MULT : 1;   // 죽음의 낫 5배가 겹쳐도 정확히 10배
+    for (const m of monsters.values()) {
+      if (m.dead || m.hp <= 0 || t.hit.has(m.id)) continue;
+      const rx = m.x - t.x0, rz = m.z - t.z0;
+      const along = rx * t.dx + rz * t.dz;
+      if (along < t.prev - 2 || along > cur + 2) continue;
+      const side = Math.abs(rx * t.dz - rz * t.dx);
+      const d = MT[m.type];
+      if (side > DEATH_THROW_WIDTH + (d ? d.sc : 1)) continue;
+      t.hit.add(m.id);
+      applyPlayerHit(p, t.ws, m.id, Math.floor(t.base * DEATH_THROW_MULT * mult), 0, 'scythethrow');
+    }
+    t.prev = cur;
+    if (cur >= DEATH_THROW_RANGE) deathThrows.splice(i, 1);
+  }
+}
 let _deathGuideT = 0, _deathSpearT = 0;
 function tickDeath(now) {
+  if (deathThrows.length) tickDeathThrows(now);
   const doGuide = now - _deathGuideT >= 200; if (doGuide) _deathGuideT = now;
   const doSpear = now - _deathSpearT >= DEATH_SPEAR_INTERVAL; if (doSpear) _deathSpearT = now;
   if (!doGuide && !doSpear) return;
@@ -2660,6 +2694,12 @@ wss.on('connection',ws=>{
         
         if((Number(ds.evadeCd)||0)>now){ msgTo(p.id,'죽음의 회피 쿨타임 '+Math.ceil(((Number(ds.evadeCd)||0)-now)/1000)+'초'); pushDeathState(p.key); return; }
         ds.evadeUntil=now+DEATH_EVADE_MS; ds.evadeCd=now+DEATH_EVADE_CD;
+      } else if(sk==='throw'){
+        if(inSafeAny(p.x,p.z)||p.hp<=0) return;
+        if(now-(ws._throwT||0)<DEATH_THROW_CD){ msgTo(p.id,'낫 던지기 쿨타임 '+Math.ceil((DEATH_THROW_CD-(now-ws._throwT))/1000)+'초'); return; }
+        const f=Number(m.face); if(!Number.isFinite(f)) return;
+        if(!deathThrowStart(p,ws,f,now)) return msgTo(p.id,'먼저 한 번 공격해 기본 데미지를 확인해야 해요.');
+        ws._throwT=now; return;
       } else if(sk==='execution'){
         ds.execution=(typeof m.on==='boolean')?m.on:!ds.execution; ds.executionUntil=ds.execution?now+20000:0;
       } else {
