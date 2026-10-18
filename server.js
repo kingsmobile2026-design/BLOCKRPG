@@ -1269,13 +1269,11 @@ app.post('/api/save',requireUser,(req,res)=>{
         if((prev.rbMult[k]|0) > (np.rbMult[k]|0)) np.rbMult[k] = prev.rbMult[k]|0;
       }
     }
-    // ow/oa 합집합
-    if(Array.isArray(prev.ow) && Array.isArray(np.ow)){
-      const s=new Set([...prev.ow, ...np.ow]); np.ow=[...s].filter(v=>Number.isInteger(v)&&v>=0).slice(0,40);
-    }
-    if(Array.isArray(prev.oa) && Array.isArray(np.oa)){
-      const s=new Set([...prev.oa, ...np.oa]); np.oa=[...s].filter(v=>Number.isInteger(v)&&v>=0).slice(0,40);
-    }
+    // 서버 구매 기록이 장비 보유의 단일 기준이다.
+    // 이전 클라이언트 저장본과 합집합하면 환생 때 초기화한 일반 장비가 되살아나
+    // 상점에서 '이미 보유' 오류가 발생하므로 서버 목록으로 덮어쓴다.
+    if(Array.isArray(prev.ow)) np.ow = prev.ow.filter(v=>Number.isInteger(v)&&v>=0).slice(0,40);
+    if(Array.isArray(prev.oa)) np.oa = prev.oa.filter(v=>Number.isInteger(v)&&v>=0).slice(0,40);
     // 검 도감(sw) 합집합 (환생 후에도 유지)
     if(Array.isArray(prev.sw)){
       const s=new Set([...prev.sw, ...(Array.isArray(np.sw)?np.sw:[])]); np.sw=[...s].filter(v=>Number.isInteger(v)&&v>=0&&v<40&&![21,22,23,24].includes(v)).slice(0,40);
@@ -2070,7 +2068,10 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   const keepOa = (Array.isArray(p.oa) ? p.oa : []).filter(v => RB_A.includes(v));
   if (!RB_W.includes(p.w|0)) { p.w = 0; p.we = 0; }
   if (!RB_A.includes(p.a|0)) { p.a = 0; p.ae = 0; }
-  p.ow = [0, ...keepOw]; p.oa = [0, ...keepOa];
+  p.ow = [...new Set([0, ...keepOw])]; p.oa = [...new Set([0, ...keepOa])];
+  // 초기화된 장비 인덱스가 클라이언트의 이전 상태에 남지 않도록 보유 목록과 동기화
+  if (!p.ow.includes(p.w|0)) { p.w = 0; p.we = 0; }
+  if (!p.oa.includes(p.a|0)) { p.a = 0; p.ae = 0; }
   p.pot = [2, 0, 0, 0];
   if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
   p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
