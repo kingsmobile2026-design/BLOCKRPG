@@ -386,7 +386,7 @@ function bossLimit(m, d, ws, dmg) {
 }
 function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   // 크리스탈 타격 (부위 파괴)
-  if (typeof id === 'string' && id.startsWith('cr_')) {
+  if (false && typeof id === 'string' && id.startsWith('cr_')) {
     const mid = Number(id.slice(3));
     const m = monsters.get(mid);
     if (!m || m.dead || !m.crystals) return;
@@ -424,7 +424,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
-  if (m.shield && m.shield.crystal) {   // 월드보스 수정 쉴드: 수정을 부숴야 함
+  if (false && m.shield && m.shield.crystal) {   // 보스 쉴드 비활성화
     if (Date.now() - (ws._shT || 0) > 800) {
       ws._shT = Date.now();
       try { ws.send(JSON.stringify({ type: 'shield_block', id: m.id, elem: 'all' })); } catch {}
@@ -432,7 +432,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     return;
   }
   // 원소 쉴드: 맞는 속성만 쉴드 파괴, 아니면 본체 피해 0
-  if (d.boss && m.shield && m.shield.hp > 0) {
+  if (false && d.boss && m.shield && m.shield.hp > 0) {
     const ok = elem && (elem === m.shield.elem || elem === 'all');
     if (!ok) {
       if (Date.now() - (ws._shT || 0) > 800) {
@@ -551,33 +551,8 @@ function nextSkillTime(m) { m.skT = (m.hp < m.mhp * 0.3) ? rnd(3.5, 6) : rnd(6, 
 const BOSS_SHIELD_ELEMS = { heavenlord:'holy', abysslord:'ice' }; // 천상 지역 보스와 포세이돈은 원소 쉴드 사용
 const WB_CRYSTALS = 4, WB_SHIELD_REGEN = 0.005;   // 수정 쉴드: 수정 4개(각 보스 최대체력 10%), 쉴드 중 초당 0.5% 회복
 const SHIELD_NAMES = { fire:'화염 쉴드', ice:'서리 쉴드', dark:'암흑 쉴드', poison:'독 쉴드', holy:'신성 쉴드', all:'만능 쉴드' };
-function maybeStartShield(m, d) {
-  if (!d.boss || m.shield || (m.groggy && m.groggy > 0)) return;
-  const elem = BOSS_SHIELD_ELEMS[m.type];
-  if (!elem) return;
-  if (m.hp > m.mhp * 0.85) return; // 초반엔 안 켬
-  const now = Date.now();
-  if ((m._shNext || 0) > now) return;
-  m._shNext = now + (m.type === 'worldboss' ? 28000 : 22000);
-  const mhp = Math.max(80, Math.floor(m.mhp * (m.type === 'worldboss' ? 0.04 : 0.06)));
-  m.shield = { elem, hp: mhp, mhp };
-  m.ver++;
-  sendNear(m.x, m.z, { type: 'shield_on', id: m.id, elem, hp: mhp, mhp, name: SHIELD_NAMES[elem] || '쉴드' });
-}
-function spawnCrystals(m, d, hpEach) {
-  if (!d.boss) return;
-  if (m.crystals && m.crystals.some(c => !c.dead)) return;
-  const n = WB_CRYSTALS; // 수정 쉴드 보스는 항상 4개
-  const sc = d.sc || 2;
-  const list = [];
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * 6.283 + rnd(-0.2, 0.2);
-    const r = 5 + sc * 1.8 + rnd(0, 2);
-    list.push({ x: m.x + Math.sin(a) * r, z: m.z + Math.cos(a) * r, hp: hpEach || Math.max(200, Math.floor(m.mhp * 0.008)), dead: false });
-  }
-  m.crystals = list;
-  sendNear(m.x, m.z, { type: 'crystals', id: m.id, list: list.map(c => ({ x: q2(c.x), z: q2(c.z), hp: c.hp, mhp: c.hp })) });
-}
+function maybeStartShield(m, d) { /* 모든 보스 쉴드 비활성화 */ }
+function spawnCrystals(m, d, hpEach) { /* 보스 쉴드용 수정 소환 비활성화 */ }
 function startFloorPattern(m, d) {
   if (m.type !== 'worldboss' && m.type !== 'demonlord' && m.type !== 'balrog') return;
   if (m.floor && m.floor.length) return;
@@ -601,24 +576,9 @@ function tickBossGimmick(m, d, dt, now, alive) {
     if (m.groggy <= 0) { m.groggy = 0; m.crystals = null; sendNear(m.x, m.z, { type: 'groggy_end', id: m.id }); }
   }
   maybeStartShield(m, d);
-  // 수정 쉴드 보스 (하데스 + 세라핌): HP 50% 이하에서 (1회) 수정 4개 + 쉴드
-  if (m.type === 'worldboss' || m.type === 'heavenlord') {
-    if (!m._wbDone && !m.shield && m.hp <= m.mhp * 0.5) {
-      m._wbDone = true;
-      m.cast = null; m.floor = null;
-      const crHP = Math.max(1000, Math.floor(m.mhp * 0.10)); // 수정 1개 = 보스 최대체력 10%
-      spawnCrystals(m, d, crHP);
-      const tot = WB_CRYSTALS * crHP;
-      m.shield = { elem:'all', hp:tot, mhp:tot, crystal:true };
-      m.ver++;
-      sendNear(m.x, m.z, { type:'shield_on', id:m.id, elem:'all', hp:tot, mhp:tot, name:'수정 쉴드' });
-    }
-    if (m.shield && m.shield.crystal) {
-      m.hp = Math.min(m.mhp, m.hp + m.mhp * WB_SHIELD_REGEN * dt);
-      m.cast = null; m.floor = null;
-      m.ver++;
-    }
-  }
+  // 보스 쉴드/수정 페이즈 비활성화
+  if (m.shield) m.shield = null;
+  if (m.crystals) { m.crystals = null; sendNear(m.x, m.z, {type:'cr_clear', id:m.id}); }
   // 장판: 주기적으로 월드보스/마왕
   if ((m.type === 'worldboss' || m.type === 'demonlord' || m.type === 'balrog') && !m.floor && !(m.shield && m.shield.crystal)) {
     m._flT = (m._flT || rnd(8, 14)) - dt;
@@ -794,7 +754,7 @@ function tickMonsters(dt, now) {
       }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
-    const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
+    const wbLock = false; // 보스 쉴드 제거: 이동/공격/스킬 제한 없음
     const casting = (d.boss && !wbLock && !stunned) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
     if (stunned) { m.cast = null; }
     else if (casting) { /* 보스 특수 패턴 시전 중 */ }
