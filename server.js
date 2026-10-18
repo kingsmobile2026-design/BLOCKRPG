@@ -208,11 +208,11 @@ const QUESTS = {
   hxp3:{name:'하급 천사의 시련',need:20,coin:15000,xp:300000},
   hxp4:{name:'천상 기사의 시련',need:15,coin:20000,xp:400000},
   hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000},
-  god_c1:{name:'구름 사신 토벌',need:5,coin:2400000,xp:4500000},
-  god_c2:{name:'천뢰 기사 격파',need:3,coin:3600000,xp:6500000},
-  god_c3:{name:'성천 뱀 사냥',need:2,coin:4800000,xp:8500000},
-  god_c4:{name:'신역 수호자 처치',need:1,coin:12000000,xp:18000000},
-  god_c5:{name:'제우스 토벌',need:1,coin:15000000,xp:22000000}
+  god_c1:{name:'구름 사신 토벌',need:5,coin:2400000,xp:9000000},
+  god_c2:{name:'천뢰 기사 격파',need:3,coin:3600000,xp:13000000},
+  god_c3:{name:'성천 뱀 사냥',need:2,coin:4800000,xp:17000000},
+  god_c4:{name:'신역 수호자 처치',need:1,coin:12000000,xp:36000000},
+  god_c5:{name:'제우스 토벌',need:1,coin:15000000,xp:44000000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
@@ -274,20 +274,30 @@ Object.assign(WORLD.ZT, {voidspawn:'abyss',abyssfiend:'abyss',nightcrawler:'abys
 WORLD.BOSS.abysslord=[-440,-570];
 // ===== 신(GOD) 지역: 구름 군도 =====
 WORLD.ZD.god = [[820,1060,-1200,-900]]; // 절벽 없이 구름 섬이 흩어진 하늘 지역
+WORLD.ZD.godarena = [[835,975,-1190,-1115]]; // 신들의 결투장 전용 스폰 구역
 Object.assign(WORLD.MT, {
-  zeus:{hp:24000000,dmg:7500,xp:5000000,g:2500000,sp:6.5,reach:8,rt:900,sc:4.8,n:1,ag:80,cd:2.2,boss:1,fix:[980,-1080],nm:'제우스'}
+  zeus:{hp:60000000,dmg:20000,xp:5000000,g:2500000,sp:6.5,reach:8,rt:900,sc:4.8,n:1,ag:80,cd:2.2,boss:1,fix:[980,-1080],nm:'제우스'}
 });
 Object.assign(WORLD.ZT, {zeus:'god'});
 WORLD.BOSS.zeus=[980,-1080];
 // 신(GOD) 지역 추가 몬스터 — 최상위 난이도 ★★★★★★★★
 Object.assign(WORLD.MT, {
-  cloudreaper:{hp:3800000,dmg:6800,xp:900000,g:480000,sp:7.5,reach:4.2,rt:20,sc:2.2,n:5,ag:42,cd:1.6,nm:'구름 사신'},
-  thunderknight:{hp:6200000,dmg:8200,xp:1400000,g:720000,sp:5.8,reach:4.0,rt:22,sc:2.6,n:4,ag:46,cd:1.8,nm:'천뢰 기사'},
-  astralserpent:{hp:8500000,dmg:9600,xp:1900000,g:950000,sp:8.2,reach:4.8,rt:24,sc:2.8,n:3,ag:50,cd:1.7,nm:'성천 뱀'},
-  godsentinel:{hp:72000000,dmg:12500,xp:12000000,g:6000000,sp:5.2,reach:9,rt:900,sc:5.2,n:1,ag:90,cd:2.1,boss:1,fix:[1030,-1130],nm:'신역 수호자'}
+  cloudreaper:{hp:1266666,dmg:6800,xp:900000,g:480000,sp:7.5,reach:4.2,rt:20,sc:2.2,n:5,ag:42,cd:1.6,nm:'구름 사신'},
+  thunderknight:{hp:2066666,dmg:8200,xp:1400000,g:720000,sp:5.8,reach:4.0,rt:22,sc:2.6,n:4,ag:46,cd:1.8,nm:'천뢰 기사'},
+  astralserpent:{hp:2833333,dmg:9600,xp:1900000,g:950000,sp:8.2,reach:4.8,rt:24,sc:2.8,n:3,ag:50,cd:1.7,nm:'성천 뱀'},
+  godsentinel:{hp:24000000,dmg:12500,xp:12000000,g:6000000,sp:5.2,reach:9,rt:900,sc:5.2,n:1,ag:90,cd:2.1,boss:1,fix:[1030,-1130],nm:'신역 수호자'}
 });
 Object.assign(WORLD.ZT,{cloudreaper:'god',thunderknight:'god',astralserpent:'god',godsentinel:'god'});
 WORLD.BOSS.godsentinel=[1030,-1130];
+// 신들의 결투장 전용 몬스터
+Object.assign(WORLD.MT, {
+  olympusduelist:{hp:3600000,dmg:9800,xp:2200000,g:1100000,sp:6.2,reach:4.2,rt:20,sc:2.3,n:5,ag:48,cd:1.6,nm:'올림포스 결투사'},
+  stormgladiator:{hp:6200000,dmg:11800,xp:3600000,g:1800000,sp:5.6,reach:4.8,rt:22,sc:2.7,n:3,ag:52,cd:1.7,nm:'폭풍 검투사'},
+  aegiswarden:{hp:10500000,dmg:14500,xp:5800000,g:2900000,sp:4.8,reach:5.2,rt:24,sc:3.0,n:2,ag:58,cd:1.9,nm:'아이기스 수호병'},
+  areschampion:{hp:32000000,dmg:18500,xp:18000000,g:9000000,sp:5.8,reach:9,rt:900,sc:4.4,n:1,ag:95,cd:2.0,boss:1,fix:[910,-1150],nm:'아레스 · 결투장 군주'}
+});
+Object.assign(WORLD.ZT,{olympusduelist:'godarena',stormgladiator:'godarena',aegiswarden:'godarena',areschampion:'godarena'});
+WORLD.BOSS.areschampion=[910,-1150];
 // ===== /신(GOD) 지역 =====
 
 // ===== 성운 지역 (신규 지역: 별빛 섬) =====
@@ -743,14 +753,14 @@ function tickMonsters(dt, now) {
       if (m.type === 'worldboss' || m.type === 'zeus') m.stun = 0;
       else { m.stun -= dt; if (m.stun > 0) stunned = true; else { m.stun = 0; m.ver++; } }
     }
-    // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 2,000 감소
+    // 제우스 패턴: 신 지역 구름 군도에 무작위 낙뢰, 적중 시 HP 10,000 감소
     if (m.type === 'zeus') {
       m._lightningT = (m._lightningT == null ? rnd(3,5) : m._lightningT) - dt;
       if (m._lightningT <= 0) {
         m._lightningT = rnd(3.5,6.5);
         const lx=rnd(835,1045), lz=rnd(-1180,-920);
-        sendNear(lx,lz,{type:'zeus_lightning',x:lx,z:lz,r:4,dmg:2000},AOI_RADIUS+60);
-        for (const pl of alive) if (pl.x>=820&&pl.x<=1060&&pl.z>=-1200&&pl.z<=-900&&Math.hypot(pl.x-lx,pl.z-lz)<=4) bossHit(m,pl,2000,now);
+        sendNear(lx,lz,{type:'zeus_lightning',x:lx,z:lz,r:4,dmg:10000},AOI_RADIUS+60);
+        for (const pl of alive) if (pl.x>=820&&pl.x<=1060&&pl.z>=-1200&&pl.z<=-900&&Math.hypot(pl.x-lx,pl.z-lz)<=4) bossHit(m,pl,10000,now);
       }
     }
     if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
