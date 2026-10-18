@@ -192,7 +192,12 @@ const QUESTS = {
   hvn1:{name:'케루빔 소탕',need:10,coin:60000,xp:40000},
   hvn2:{name:'세라핌 처치',need:10,coin:80000,xp:60000},
   hvn3:{name:'대천사 격파',need:1,coin:200000,xp:150000},
-  hvn4:{name:'세라핌 토벌',need:1,coin:800000,xp:600000}
+  hvn4:{name:'세라핌 토벌',need:1,coin:800000,xp:600000},
+  hxp1:{name:'케루빔 수련',need:15,coin:10000,xp:150000},
+  hxp2:{name:'빛의 정령 정화',need:15,coin:10000,xp:180000},
+  hxp3:{name:'하급 천사의 시련',need:20,coin:15000,xp:300000},
+  hxp4:{name:'천상 기사의 시련',need:15,coin:20000,xp:400000},
+  hxp5:{name:'신성 야수 사냥',need:10,coin:30000,xp:600000}
 };
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
@@ -309,7 +314,7 @@ function respawnMonster(m) {
   const d = MT[m.type];
   const [x, z] = pickPos(m.type);
   m.x = x; m.z = z; m.px = x; m.pz = z; m.home = [x, z];
-  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8); m._ret = null; m._lastTgtId = null; m._wbDone = false; m.shield = null; m.crystals = null; m.floor = null;
+  m.hp = d.hp; m.mhp = d.hp; m.dead = false; m.rt = 0; m.cd = 0; m.kx = m.kz = 0; m.face = 0; m.cast = null; m.skT = rnd(4, 8); m._ret = null; m._lastTgtId = null; m._wbDone = false; m.shield = null; m.crystals = null; m.floor = null; m.stun = 0;
   m.dmg.clear(); m.ver++;
 }
 function initMonsters() {
@@ -339,10 +344,12 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     const mid = Number(id.slice(3));
     const m = monsters.get(mid);
     if (!m || m.dead || !m.crystals) return;
-    const ci = m.crystals.findIndex(c => !c.dead && Math.hypot(c.x - p.x, c.z - p.z) < 4.5);
+    let ci = -1, bd = 1e9;
+    m.crystals.forEach((cc, i) => { if (cc.dead) return; const dd = Math.hypot(cc.x - p.x, cc.z - p.z); if (dd < 11 && dd < bd) { bd = dd; ci = i; } });
     if (ci < 0) return;
     const c = m.crystals[ci];
-    c.hp -= Math.max(1, Math.min(50000, Math.floor(dmg)));
+    c.hp -= Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
+    sendNear(m.x, m.z, { type: 'cr_hp', id: mid, i: ci, hp: Math.max(0, Math.ceil(c.hp)) });
     if (m.shield && m.shield.crystal) {
       m.shield.hp = m.crystals.reduce((a, x) => a + (x.dead ? 0 : Math.max(0, x.hp)), 0);
       m.ver++;
@@ -408,6 +415,7 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   if (kb > 0) { const dd = dist || 1; m.kx = dx / dd * kb; m.kz = dz / dd * kb; }
   m.ver++;
   if (m.hp <= 0) {
+    if (m.crystals) sendNear(m.x, m.z, { type: 'cr_clear', id: m.id });
     m.hp = 0; m.dead = true; m.rt = d.rt; m.kx = m.kz = 0; m.cast = null; m.shield = null; m.groggy = 0; m.crystals = null; m.floor = null;
     // 보상: 마지막 일격을 가한 사람 + 몬스터 체력의 2% 이상 피해를 준 접속자
     const got = new Set();
@@ -515,7 +523,7 @@ function spawnCrystals(m, d, hpEach) {
     list.push({ x: m.x + Math.sin(a) * r, z: m.z + Math.cos(a) * r, hp: hpEach || Math.max(200, Math.floor(m.mhp * 0.008)), dead: false });
   }
   m.crystals = list;
-  sendNear(m.x, m.z, { type: 'crystals', id: m.id, list: list.map(c => ({ x: q2(c.x), z: q2(c.z), hp: c.hp })) });
+  sendNear(m.x, m.z, { type: 'crystals', id: m.id, list: list.map(c => ({ x: q2(c.x), z: q2(c.z), hp: c.hp, mhp: c.hp })) });
 }
 function startFloorPattern(m, d) {
   if (m.type !== 'worldboss' && m.type !== 'demonlord' && m.type !== 'balrog') return;
@@ -699,10 +707,17 @@ function tickMonsters(dt, now) {
     }
     if (tgt) { m._lastTgtId = tgt.id; if (!m._ret) m._ret = [m.x, m.z]; }   // 어그로가 걸리기 전 위치 기억
     else if (nearAny > stickR || homeDist > leash) m._lastTgtId = null;
-    if (d.boss) tickBossGimmick(m, d, dt, now, alive);
+    // ★ 마검사 아이스볼: 스턴 중에는 이동·공격·스킬·쉴드 시전 불가 (월드보스는 면역)
+    let stunned = false;
+    if (m.stun > 0) {
+      if (m.type === 'worldboss') m.stun = 0;
+      else { m.stun -= dt; if (m.stun > 0) stunned = true; else { m.stun = 0; m.ver++; } }
+    }
+    if (d.boss && !stunned) tickBossGimmick(m, d, dt, now, alive);
     const wbLock = !!(m.shield && m.shield.crystal);   // 월드보스 수정 쉴드 중: 이동/공격/스킬 불가
-    const casting = (d.boss && !wbLock) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
-    if (casting) { /* 보스 특수 패턴 시전 중 */ }
+    const casting = (d.boss && !wbLock && !stunned) ? bossSkillTick(m, d, dt, now, alive, tgt, td) : false;
+    if (stunned) { m.cast = null; }
+    else if (casting) { /* 보스 특수 패턴 시전 중 */ }
     else if (wbLock) { if (tgt) m.face = Math.atan2(tgt.x - m.x, tgt.z - m.z); }
     else if (tgt) {
       const ex = tgt.x - m.x, ez = tgt.z - m.z;
@@ -874,7 +889,7 @@ function cleanState(input){
  if(!input||typeof input!=='object'||Array.isArray(input))return null;
  const p=input.player,c=input.camera;if(!p||typeof p!=='object'||Array.isArray(p))return null;
  const fields=['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg'],player={};
- for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v))player[k]=Math.max(-1000000,Math.min(1000000,v));}
+ for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v)){const cap=(k==='coin'||k==='xp'||k==='nx')?1e9:1000000;player[k]=Math.max(-cap,Math.min(cap,v));}}
  player.x=Math.max(-1100,Math.min(1100,Number(player.x)||0));player.z=Math.max(-2400,Math.min(400,Number(player.z)||0));
  player.lv=Math.max(1,Math.min(1e6,Math.floor(Number(player.lv)||1)));player.mhp=Math.max(1,Math.min(100000,Number(player.mhp)||100));player.hp=Math.max(0,Math.min(player.mhp,Number(player.hp)||0));
  player.coin=Math.max(0,Math.min(1e9,Math.floor(Number(player.coin)||0)));player.xp=Math.max(0,Math.min(1e9,Math.floor(Number(player.xp)||0)));
@@ -913,6 +928,7 @@ function cleanState(input){
   if(!player.qa) player.qa=Object.assign({}, qp);
  }
  if(typeof p.job==='string'&&/^[a-z_]{1,24}$/.test(p.job)) player.job=p.job;
+ if(p.msUnlocked===true||p.job==='magesword') player.msUnlocked=true;
  if(Number.isFinite(Number(p.jstep))) player.jstep=Math.max(0,Math.min(10,Number(p.jstep)));
  if(Number.isFinite(Number(p.jm))) player.jm=Math.max(0.1,Math.min(5,Number(p.jm)));
  if(Number.isFinite(Number(p.jhp))) player.jhp=Math.max(0.1,Math.min(5,Number(p.jhp)));
@@ -999,6 +1015,7 @@ app.post('/api/save',requireUser,(req,res)=>{
     }
   }
   if(prev&&prev.bank) state.player.bank=prev.bank;
+  if(prev&&prev.msUnlocked) state.player.msUnlocked=true;
   if(prev){
     if(prev.rstat!=null && state.player.rstat==null) state.player.rstat=prev.rstat;
     if(prev.rbMult && !state.player.rbMult) state.player.rbMult=prev.rbMult;
@@ -1719,6 +1736,8 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   if (!RB_A.includes(p.a|0)) { p.a = 0; p.ae = 0; }
   p.ow = [0, ...keepOw]; p.oa = [0, ...keepOa];
   p.pot = [2, 0, 0, 0];
+  if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
+  p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
   p.mhp = 100;
   p.hp = p.mhp;
   p.talentPts = expectedTalentPts(p);
@@ -2052,13 +2071,38 @@ app.post('/api/rebirth/shop', requireUser, (req, res) => {
 // ===== 은행원: 코인/재료 보관 =====
 const BANK_ITEM_CAP=999999, BANK_SLOTS=60;
 function bankView(p){return {coin:p.coin|0,items:p.items||{},bank:{coin:p.bank.coin|0,items:p.bank.items}};}
+// ★ 코인/재료는 클라이언트(화면) 기준으로 쌓이므로, 은행 이용 직전에 화면에 보이는 값으로 서버 값을 맞춘다.
+//   (저장이 아직 서버에 도착하지 않아 150만이 148만으로 줄어드는 현상 방지)
+function bankSyncFromClient(p,b){
+  if(!b||typeof b!=='object') return;
+  const c=Number(b.sc);
+  if(Number.isFinite(c)) p.coin=Math.max(0,Math.min(1e9,Math.floor(c)));
+  const it=b.si;
+  if(it&&typeof it==='object'&&!Array.isArray(it)){
+    const out={};let n=0;
+    for(const [k,v] of Object.entries(it)){
+      if(n>=120) break;
+      if(!/^[A-Za-z0-9_]{1,24}$/.test(k)) continue;
+      const q=Math.max(0,Math.min(BANK_ITEM_CAP,Math.floor(Number(v)||0)));
+      if(q>0){out[k]=q;n++;}
+    }
+    p.items=out;
+  }
+}
 app.get('/api/bank/info',requireUser,(req,res)=>{
   const p=ensurePlayer(req.userKey);
+  res.json(bankView(p));
+});
+app.post('/api/bank/info',requireUser,(req,res)=>{
+  const p=ensurePlayer(req.userKey);
+  bankSyncFromClient(p,req.body);
+  persistSoon();
   res.json(bankView(p));
 });
 app.post('/api/bank/tx',requireUser,(req,res)=>{
   const p=ensurePlayer(req.userKey);
   const b=req.body||{};
+  bankSyncFromClient(p,b);
   if(inSafe(Number(p.x)||0,Number(p.z)||0)===false) return res.status(400).json({error:'은행은 시작 마을에서만 이용할 수 있어요.'});
   const act=b.act, kind=b.kind;
   let amt=Math.floor(Number(b.amount));
@@ -2374,6 +2418,19 @@ if(m.type==='chat'){
       return;
     }
 
+    // 마검사 아이스볼: {type:'stun', ids:[몬스터id...]} — 3초간 행동불가 (월드보스 제외)
+    if(m.type==='stun'){
+      if(!Array.isArray(m.ids)||p.hp<=0) return;
+      if(now-(ws._stunT||0)<2500) return;
+      ws._stunT=now;
+      for(const id of m.ids.slice(0,24)){
+        const mm=monsters.get(id);
+        if(!mm||mm.dead||mm.type==='worldboss') continue;
+        if(Math.hypot(mm.x-p.x,mm.z-p.z)>75) continue;
+        mm.stun=3; mm.cast=null; mm.ver++;
+      }
+      return;
+    }
     // 몬스터 타격: {type:'hit', list:[[몬스터id, 피해, 넉백], ...]} — 체력/사망/보상은 서버가 결정
     if(m.type==='hit'){
       if(!Array.isArray(m.list)||m.list.length>60) return;
