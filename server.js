@@ -678,6 +678,23 @@ function tickDeath(now) {
       }
     }
     if (doSpear && ds.spears) deathSpearsAttack(p, ws);
+    // 영혼 수확의 결계: 반경 14m 장판 — 주기적으로 근처 몬스터에 기본 데미지 8%
+    if (ds.harvest && doSpear) {
+      const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+      const one = Math.max(1, Math.floor(base * 0.08));
+      if (base >= 1) {
+        for (const m of monsters.values()) {
+          if (m.dead || m.hp <= 0) continue;
+          if (Math.hypot(m.x - p.x, m.z - p.z) > 14) continue;
+          applyPlayerHit(p, ws, m.id, one, 0, 'harvest');
+        }
+      }
+      // 장판 위치 동기화 (이동 중에도 보이게)
+      if (now - (ws._harvT || 0) > 800) {
+        ws._harvT = now;
+        sendNear(p.x, p.z, { type: 'death_harvest', id: p.id, on: true, x: q2(p.x), z: q2(p.z), r: 14 }, 200);
+      }
+    }
   }
 }
 // 패시브: 목숨 2개 — 죽은 자리에서 즉시 부활(아우라 연출), 사망 페널티(코인 손실) 없음
@@ -2590,7 +2607,7 @@ wss.on('connection',ws=>{
   // 회원가입/로그인 닉네임이 있으면 그 이름, 없으면 익명
   const displayName = ws._username || ('플레이어-'+id.slice(0,4));
   const savedPlayer=ws._userKey&&db.states[ws._userKey]&&db.states[ws._userKey].player;
-  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:'', soul:false, sp:false, title:savedPlayer&&savedPlayer.equippedTitle||''};
+  const p={id, name:displayName, x:0, z:8, y:0, face:0, pvp:false, hp:100, mhp:100, lv:1, job:'', gn:'', soul:false, sp:false, harvest:false, title:savedPlayer&&savedPlayer.equippedTitle||''};
   { const gg=ws._userKey?guildOfKey(ws._userKey):null; p.gn=gg?gg.name:''; }
   Object.defineProperty(p,'invTill',{value:0,writable:true,enumerable:false});   // 서버 전용(브로드캐스트 제외)
   Object.defineProperty(p,'party',{value:null,writable:true,enumerable:false});
@@ -2706,6 +2723,10 @@ wss.on('connection',ws=>{
         ds[sk]=(typeof m.on==='boolean')?m.on:!ds[sk];
         if(sk==='spears') p.sp=!!ds.spears;
         if(sk==='soul') p.soul=!!ds.soul;
+        if(sk==='harvest'){
+          p.harvest=!!ds.harvest;
+          sendNear(p.x,p.z,{type:'death_harvest',id:p.id,on:!!ds.harvest,x:q2(p.x),z:q2(p.z),r:14},200);
+        }
       }
       if(db.states[p.key]) db.states[p.key].savedAt=Date.now();
       persistSoon();
