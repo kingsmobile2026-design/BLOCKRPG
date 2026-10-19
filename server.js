@@ -163,7 +163,11 @@ const SHOP_W = [
   {name:'천뢰의 파멸검',cost:36000000},  // 27
   {name:'창세의 신검',cost:44000000},    // 28
   {name:'천상천하의 창',cost:52000000},  // 29
-  {name:'신성한 성운검',cost:84000000}     // 30: 성운의 별검 가격의 2배
+  {name:'신성한 성운검',cost:84000000},    // 30: 성운의 별검 가격의 2배
+  {name:'제우스의 번개',cost:1000000000},  // 31 올림포스 신기
+  {name:'아레스의 창',cost:500000000},     // 32
+  {name:'포세이돈의 창',cost:700000000},   // 33
+  {name:'아폴로의 활',cost:600000000}      // 34
 ];
 const SHOP_A = [
   null, // 0 천 옷
@@ -302,11 +306,21 @@ WORLD.BOSS.areschampion=[910,-1150];
 
 // ===== 성운 지역 (신규 지역: 별빛 섬) =====
 WORLD.ZD.nebula = [[1160,1420,-1510,-1240]];
+WORLD.ZD.ship = [[1500,1560,-1200,-1160]]; // 우주선 내부 (몬스터 없음)
+WORLD.ZD.station = [[1520,1780,-1500,-1250]]; // 국제 우주정거장 (성운 지역에서 이동)
 Object.assign(WORLD.MT, {
-  starguard:{hp:420000,dmg:3200,xp:180000,g:90000,sp:5.5,reach:3.2,rt:18,sc:1.7,n:8,ag:25,cd:1.7,nm:'별빛 수호자'},
-  nebulafox:{hp:360000,dmg:2800,xp:150000,g:75000,sp:8.5,reach:2.7,rt:14,sc:1.3,n:10,ag:24,cd:1.4,nm:'성운 여우'},
-  astralmage:{hp:520000,dmg:3900,xp:220000,g:110000,sp:4.8,reach:3.0,rt:16,sc:1.5,n:7,ag:28,cd:1.8,nm:'성운 마도사'},
-  astralguardian:{hp:4200000,dmg:6200,xp:1200000,g:650000,sp:4.5,reach:6.5,rt:360,sc:3.4,n:1,ag:36,cd:2,boss:1,fix:[1290,-1370],nm:'성운 수호왕'}
+  stationdrone:{hp:70000000,dmg:20500,xp:4000000,g:2000000,sp:6.5,reach:2.8,rt:14,sc:1.2,n:9,ag:55,cd:1.5,nm:'정거장 드론'},
+  spacemarine:{hp:75000000,dmg:21000,xp:4400000,g:2200000,sp:5.2,reach:3.0,rt:16,sc:1.6,n:8,ag:55,cd:1.7,nm:'우주 해병'},
+  cosmicwatcher:{hp:82000000,dmg:21500,xp:4800000,g:2400000,sp:4.6,reach:3.2,rt:18,sc:1.8,n:6,ag:55,cd:1.8,nm:'우주 감시자'},
+  stationcore:{hp:300000000,dmg:38000,xp:30000000,g:15000000,sp:4.5,reach:7,rt:480,sc:3.6,n:1,ag:75,cd:2,boss:1,fix:[1700,-1375],nm:'정거장 관제 AI'}
+});
+Object.assign(WORLD.ZT, {stationdrone:'station',spacemarine:'station',cosmicwatcher:'station',stationcore:'station'});
+WORLD.BOSS.stationcore=[1700,-1375];
+Object.assign(WORLD.MT, {
+  starguard:{hp:90000000,dmg:22000,xp:6000000,g:3000000,sp:5.5,reach:3.2,rt:18,sc:1.7,n:8,ag:60,cd:1.7,nm:'별빛 수호자'},
+  nebulafox:{hp:80000000,dmg:21000,xp:5000000,g:2500000,sp:8.5,reach:2.7,rt:14,sc:1.3,n:10,ag:60,cd:1.4,nm:'성운 여우'},
+  astralmage:{hp:100000000,dmg:24000,xp:7000000,g:3500000,sp:4.8,reach:3.0,rt:16,sc:1.5,n:7,ag:60,cd:1.8,nm:'성운 마도사'},
+  astralguardian:{hp:600000000,dmg:45000,xp:60000000,g:30000000,sp:4.5,reach:6.5,rt:360,sc:3.4,n:1,ag:80,cd:2,boss:1,fix:[1290,-1370],nm:'성운 수호왕'}
 });
 Object.assign(WORLD.ZT, {starguard:'nebula',nebulafox:'nebula',astralmage:'nebula',astralguardian:'nebula'});
 WORLD.BOSS.astralguardian=[1290,-1370];
@@ -325,7 +339,14 @@ const VILLAGE_R = 18;            // 마을 반경 (몬스터 진입/공격 불�
 // 신(GOD) 지역 천사마을: 몬스터 스폰/진입 금지 + 보스 공격·PvP 무효 (클라이언트 ANGEL_VIL 과 동일 좌표)
 const ANGEL_VILLAGE = { x0:828, x1:912, z0:-982, z1:-906 };
 const inAngelVillage = (x, z) => x >= ANGEL_VILLAGE.x0 && x <= ANGEL_VILLAGE.x1 && z >= ANGEL_VILLAGE.z0 && z <= ANGEL_VILLAGE.z1;
-const inSafeAny = (x, z) => inSafe(x, z) || inAngelVillage(x, z);
+const SAFE_PADS = [   // 성운 착륙장 / 성운→정거장 게이트 / 정거장 귀환 게이트: 몬스터 스폰·진입 금지
+  { x0:1160, x1:1196, z0:-1282, z1:-1240 },
+  { x0:1384, x1:1420, z0:-1398, z1:-1352 },
+  { x0:1520, x1:1556, z0:-1398, z1:-1352 }
+];
+const inNebPad = (x, z) => SAFE_PADS.some(N => x >= N.x0 && x <= N.x1 && z >= N.z0 && z <= N.z1);
+const inShip = (x, z) => x >= 1500 && x <= 1560 && z >= -1200 && z <= -1160;
+const inSafeAny = (x, z) => inSafe(x, z) || inAngelVillage(x, z) || inNebPad(x, z) || inShip(x, z);
 // 수정 쉴드 보스 전용 격리 구역 (다른 몬스터 진입 불가)
 // 보스 신전/신구역: 다른 몬스터 스폰 금지 + 플레이어 어그로 차단
 const BOSS_EXCLUSION = [
@@ -356,6 +377,7 @@ function pickPos(type) {
     const x = rnd(r[0] + 5, r[1] - 5), z = rnd(r[2] + 5, r[3] - 5);
     if (!inW(x, z)) continue;
     if (inAngelVillage(x, z)) continue; // 천사마을 안에는 몬스터 스폰 금지
+    if (inNebPad(x, z)) continue;
     if (BOSS_POS.some(b => Math.hypot(x - b[0], z - b[1]) < 45)) continue; // 쉴드 보스 주변은 다른 몬스터 스폰 금지
     if (!d.boss && nearBossExclusion(x, z)) continue;
     return [x, z];
@@ -1006,6 +1028,11 @@ function tickMonsters(dt, now) {
     if (!inW(m.x, m.z)) { m.x = m.px; m.z = m.pz; } else { m.px = m.x; m.pz = m.z; }
     const er = Math.hypot(m.x, m.z);
     if (er < VILLAGE_R && er > 0) { m.x *= VILLAGE_R / er; m.z *= VILLAGE_R / er; }
+    for (const N of SAFE_PADS) if (m.x >= N.x0 && m.x <= N.x1 && m.z >= N.z0 && m.z <= N.z1) {
+      const dl = m.x - N.x0, dr = N.x1 - m.x, dn = m.z - N.z0, ds = N.z1 - m.z, mn = Math.min(dl, dr, dn, ds);
+      if (mn === dl) m.x = N.x0 - 1; else if (mn === dr) m.x = N.x1 + 1; else if (mn === dn) m.z = N.z0 - 1; else m.z = N.z1 + 1;
+      if (!inW(m.x, m.z)) { m.x = m.px; m.z = m.pz; } else { m.px = m.x; m.pz = m.z; }
+    }
     if (inAngelVillage(m.x, m.z)) { // 천사마을 진입 방지: 가장 가까운 가장자리 밖으로 밀어낸다
       const A = ANGEL_VILLAGE, dl = m.x - A.x0, dr = A.x1 - m.x, dn = m.z - A.z0, ds = A.z1 - m.z, mn = Math.min(dl, dr, dn, ds);
       if (mn === dl) m.x = A.x0 - 1; else if (mn === dr) m.x = A.x1 + 1; else if (mn === dn) m.z = A.z0 - 1; else m.z = A.z1 + 1;
@@ -1096,6 +1123,7 @@ function seedAdmin(){
     return persist().catch(e => console.error('seed persist', e.message));
   } else {
     db.users[key].isAdmin = true;
+    db.users[key].isSubAdmin = false;
     db.users[key].banned = !!db.users[key].banned;
   }
   if(!db.bans) db.bans = {};
@@ -1298,9 +1326,9 @@ app.post('/api/login',authLimiter,(req,res)=>{
  if(!u||!safeEqual(actual,expected))return res.status(401).json({error:'아이디 또는 비밀번호가 올바르지 않습니다.'});
  if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});
  const token=newToken(key);cookie(req,res,token);
- if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,token});
+ if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});
 });
-app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,token});});
+app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});});
 app.post('/api/save',requireUser,(req,res)=>{
   const state=cleanState(req.body&&req.body.state);
   if(!state)return res.status(400).json({error:'저장 데이터 형식이 올바르지 않습니다.'});
@@ -1445,12 +1473,30 @@ function requireAdmin(req,res,next){
   if(!db.users[key]||!db.users[key].isAdmin) return res.status(403).json({error:'관리자 권한이 없습니다.'});
   req.userKey=key; next();
 }
-app.get('/api/admin/users', requireAdmin, (req,res)=>{
+function requireStaff(req,res,next){
+  const key=userFromReq(req);
+  if(!key) return res.status(401).json({error:'로그인이 필요합니다.'});
+  const u=db.users[key];
+  if(!u||(!u.isAdmin&&!u.isSubAdmin)) return res.status(403).json({error:'관리자 권한이 없습니다.'});
+  req.userKey=key; req.isOwner=!!u.isAdmin; next();
+}
+const SUBADMIN_MAX_LV = 1000, SUBADMIN_MAX_COIN = 100000000;
+app.post('/api/admin/appoint', requireAdmin, (req,res)=>{
+  const {username, on=true} = req.body||{};
+  if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
+  const key=usernameKey(username); const u=db.users[key];
+  if(!u) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
+  if(u.isAdmin) return res.status(400).json({error:'이미 최고 관리자입니다.'});
+  u.isSubAdmin=!!on;
+  try{persist(); res.json({ok:true, username:u.username, isSubAdmin:!!u.isSubAdmin});}
+  catch(e){res.status(500).json({error:'저장 실패'});}
+});
+app.get('/api/admin/users', requireStaff, (req,res)=>{
   const list=[];
   for(const [key,u] of Object.entries(db.users)){
     const st=db.states[key]&&db.states[key].player;
     list.push({
-      key, username:u.username, isAdmin:!!u.isAdmin,
+      key, username:u.username, isAdmin:!!u.isAdmin, isSubAdmin:!!u.isSubAdmin,
       banned:!!(u.banned||(db.bans&&db.bans[key])),
       createdAt:u.createdAt||0,
       lv: st?st.lv:1, coin: st?st.coin:0, xp: st?st.xp:0
@@ -1472,7 +1518,7 @@ app.post('/api/admin/ban', requireAdmin, (req,res)=>{
   try{persist(); res.json({ok:true, username:u.username, banned:!!u.banned});}
   catch(e){res.status(500).json({error:'저장 실패'});}
 });
-app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
+app.post('/api/admin/set-level', requireStaff, (req,res)=>{
   const {username, level} = req.body||{};
   if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
   const lv=Math.floor(Number(level));
@@ -1480,6 +1526,11 @@ app.post('/api/admin/set-level', requireAdmin, (req,res)=>{
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
   const p=ensurePlayer(key);
+  if(!req.isOwner){
+    if(db.users[key].isAdmin) return res.status(403).json({error:'최고 관리자는 변경할 수 없습니다.'});
+    const cur=Math.max(1,p.lv|0);
+    if(lv<cur||lv-cur>SUBADMIN_MAX_LV) return res.status(403).json({error:'어드민은 한 번에 최대 '+SUBADMIN_MAX_LV+'레벨까지만 올릴 수 있습니다. (현재 Lv'+cur+')'});
+  }
   p.lv=lv;
   p.xp=0;
   // Lv50 이후 경험치 곡선 완화 (1.15 → 1.10)
@@ -1542,13 +1593,17 @@ app.post('/api/admin/set-rebirth', requireAdmin, (req,res)=>{
   if(rb<DEATH_REBIRTH) pushDeathState(key);
   res.json({ok:true, username:db.users[key].username, rebirth:p.rebirth, job:p.job, deathAwakened:first});
 });
-app.post('/api/admin/give-coin', requireAdmin, (req,res)=>{
+app.post('/api/admin/give-coin', requireStaff, (req,res)=>{
   const {username, amount} = req.body||{};
   if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
   const amt=Math.floor(Number(amount));
   if(!Number.isFinite(amt)||amt===0||Math.abs(amt)>1e9) return res.status(400).json({error:'코인 수량이 올바르지 않습니다.'});
   const key=usernameKey(username);
   if(!db.users[key]) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
+  if(!req.isOwner){
+    if(amt<0||amt>SUBADMIN_MAX_COIN) return res.status(403).json({error:'어드민은 한 번에 최대 1억 코인까지만 지급할 수 있습니다.'});
+    if(db.users[key].isAdmin) return res.status(403).json({error:'최고 관리자는 변경할 수 없습니다.'});
+  }
   const p=ensurePlayer(key);
   p.coin=Math.max(0, Math.floor((p.coin||0)+amt));
   db.states[key].savedAt=Date.now();
