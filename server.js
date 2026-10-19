@@ -460,7 +460,8 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const d = MT[m.type];
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (elem !== 'scythethrow' && dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
-  dmg = Math.max(1, Math.min(MAX_HIT_DMG, Math.floor(dmg)));
+  const hitCap = Math.max(MAX_HIT_DMG, Math.floor((Number(m.mhp) || 0) * 0.02));   // 고체력(성운/정거장) 몬스터는 최대 체력의 2%까지 1타 허용
+  dmg = Math.max(1, Math.min(hitCap, Math.floor(dmg)));
   if (elem !== 'spear' && elem !== 'scythethrow') p.lastHit = dmg;                       // 죽음의 창 기준 데미지(클라가 bd 를 안 보낼 때 대체값)
   if (deathOn(p, 'scythe')) dmg = Math.floor(dmg * DEATH_SCYTHE_MULT);   // 죽음의 낫: 데미지 5배
   if (false && m.shield && m.shield.crystal) {   // 보스 쉴드 비활성화
@@ -556,6 +557,15 @@ function killMonster(m, d, p) {
   }
 }
 const MAX_HIT_DMG = 500000;
+// 레벨업에 필요한 경험치: Lv1=30. 올라가는 레벨 기준 배율 — ~Lv40: x1.5 / 41~99: x1.2 / 100~299: x1.1 / 300~: x1.05
+const NX_CAP = Number.MAX_SAFE_INTEGER;
+function nxMult(lv) { return lv <= 40 ? 1.5 : lv <= 99 ? 1.2 : lv <= 299 ? 1.1 : 1.05; }
+function nxForLevel(lv) {
+  lv = Math.max(1, Math.floor(Number(lv) || 1));
+  let nx = 30;
+  for (let L = 2; L <= lv; L++) { nx *= nxMult(L); if (nx >= NX_CAP) return NX_CAP; }
+  return Math.max(30, Math.floor(nx));
+}
 
 // ===================================================================================
 //  죽음의 신 (환생 500회 달성 시 전직) — 스킬/패시브는 전부 서버 권한
@@ -568,6 +578,7 @@ const DEATH_GUIDE_EXCLUDE = new Set(['zeus', 'areschampion']);   // 제우스, �
 const DEATH_SCYTHE_MULT = 5;                        // 죽음의 낫 데미지 배율
 const DEATH_EVADE_MS = 60000, DEATH_EVADE_CD = 120000, DEATH_EVADE_MULT = 0.1;   // 약 1분 받는 피해 x0.1 / 쿨 2분
 const DEATH_SPEAR_COUNT = 15, DEATH_SPEAR_RANGE = 20, DEATH_SPEAR_RATE = 0.15, DEATH_SPEAR_INTERVAL = 600;
+const DEATH_SPEAR_CD = 600;   // 창 1개마다 개별 쿨다운(ms). 15개가 DEATH_SPEAR_CD/15 간격으로 엇갈려 발사됨
 const DEATH_MAX_LIVES = 2, DEATH_REVIVE_INV_MS = 4000;
 const DEATH_SOUL_SPEED = 3;                         // 영혼 모드 이동속도 배율 (대쉬 불가)
 const DEATH_SKILL_IDS = { 1:'guide', 2:'scythe', 3:'evade', 4:'spears', 5:'throw', 6:'soul', 7:'harvest', 8:'execution', guide:'guide', scythe:'scythe', evade:'evade', spears:'spears', soul:'soul', harvest:'harvest', execution:'execution' };
@@ -628,23 +639,34 @@ function deathGuideKill(p, m) {
   killMonster(m, d, p);
 }
 // 죽음의 창: 15개 고정, 창마다 다른 몬스터를 노리고 몬스터가 15마리 미만이면 남는 창을 한 마리씩 더 배정
-function deathSpearsAttack(p, ws) {
+function deathSpearsAttack(p, ws, now) {
+  now = now || Date.now();
   const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  // 창마다 자기 쿨다운 보유 (처음엔 서로 엇갈리게 시작)
+  if (!Array.isArray(p._spearCd) || p._spearCd.length !== DEATH_SPEAR_COUNT) {
+    p._spearCd = [];
+    for (let i = 0; i < DEATH_SPEAR_COUNT; i++) p._spearCd.push(now + Math.floor(i * DEATH_SPEAR_CD / DEATH_SPEAR_COUNT));
+  }
+  const ready = [];
+  for (let i = 0; i < DEATH_SPEAR_COUNT; i++) if (p._spearCd[i] <= now) ready.push(i);
+  if (!ready.length) return;
   const cand = [];
   for (const m of monsters.values()) {
     if (m.dead || m.hp <= 0) continue;
     const dd = Math.hypot(m.x - p.x, m.z - p.z);
     if (dd <= DEATH_SPEAR_RANGE) cand.push([dd, m]);
   }
-  if (!cand.length) return;
+  if (!cand.length) return;   // 타겟이 없으면 쿨다운을 소모하지 않고 대기
   cand.sort((a, b) => a[0] - b[0]);
   const tg = cand.length > DEATH_SPEAR_COUNT ? cand.slice(0, DEATH_SPEAR_COUNT) : cand;
   const per = new Map(), assign = [];
-  for (let i = 0; i < DEATH_SPEAR_COUNT; i++) {
+  for (const i of ready) {
+    p._spearCd[i] = now + DEATH_SPEAR_CD;   // 이 창만 쿨다운 시작
     const m = tg[i % tg.length][1];
     assign.push(m.id); per.set(m, (per.get(m) || 0) + 1);
   }
-  sendNear(p.x, p.z, { type: 'death_spears', id: p.id, t: assign, n: DEATH_SPEAR_COUNT }, 150);   // 창마다 타겟 몬스터 id (연출용)
+  // t: 발사된 창들의 타겟 id, i: 발사된 창 번호(0~14), cd: 창 1개 쿨다운(ms)
+  sendNear(p.x, p.z, { type: 'death_spears', id: p.id, t: assign, i: ready, n: DEATH_SPEAR_COUNT, cd: DEATH_SPEAR_CD }, 150);
   const one = Math.floor(base * DEATH_SPEAR_RATE);   // 창 1개 = 내 데미지의 15%
   if (one < 1) return;
   for (const [m, n] of per) applyPlayerHit(p, ws, m.id, one * n, 0, 'spear');
@@ -687,7 +709,6 @@ function tickDeath(now) {
   if (deathThrows.length) tickDeathThrows(now);
   const doGuide = now - _deathGuideT >= 200; if (doGuide) _deathGuideT = now;
   const doSpear = now - _deathSpearT >= DEATH_SPEAR_INTERVAL; if (doSpear) _deathSpearT = now;
-  if (!doGuide && !doSpear) return;
   for (const ws of wss.clients) {
     const p = ws.player;
     if (!p || ws.readyState !== WebSocket.OPEN || p.hp <= 0) continue;
@@ -699,7 +720,7 @@ function tickDeath(now) {
         if (deathGuideReady(p, m) && Math.hypot(m.x - p.x, m.z - p.z) <= DEATH_GUIDE_RANGE) deathGuideKill(p, m);
       }
     }
-    if (doSpear && ds.spears) deathSpearsAttack(p, ws);
+    if (ds.spears) deathSpearsAttack(p, ws, now);
     // 영혼 수확의 결계: 반경 14m 장판 — 주기적으로 근처 몬스터에 기본 데미지 8%
     if (ds.harvest && doSpear) {
       const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
@@ -1224,10 +1245,10 @@ function cleanState(input){
  if(!input||typeof input!=='object'||Array.isArray(input))return null;
  const p=input.player,c=input.camera;if(!p||typeof p!=='object'||Array.isArray(p))return null;
  const fields=['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg'],player={};
- for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v)){const cap=(k==='coin'||k==='xp'||k==='nx')?1e9:1000000;player[k]=Math.max(-cap,Math.min(cap,v));}}
- player.x=Math.max(-1100,Math.min(1100,Number(player.x)||0));player.z=Math.max(-2400,Math.min(400,Number(player.z)||0));
+ for(const k of fields){const v=p[k];if(typeof v==='number'&&Number.isFinite(v)){const cap=(k==='xp'||k==='nx')?Number.MAX_SAFE_INTEGER:(k==='coin'?1e9:1000000);player[k]=Math.max(-cap,Math.min(cap,v));}}
+ player.x=Math.max(-2000,Math.min(2000,Number(player.x)||0));player.z=Math.max(-2400,Math.min(400,Number(player.z)||0));
  player.lv=Math.max(1,Math.min(1e6,Math.floor(Number(player.lv)||1)));player.mhp=Math.max(1,Math.min(100000,Number(player.mhp)||100));player.hp=Math.max(0,Math.min(player.mhp,Number(player.hp)||0));
- player.coin=Math.max(0,Math.min(1e9,Math.floor(Number(player.coin)||0)));player.xp=Math.max(0,Math.min(1e9,Math.floor(Number(player.xp)||0)));
+ player.coin=Math.max(0,Math.min(1e9,Math.floor(Number(player.coin)||0)));player.xp=Math.max(0,Math.min(Number.MAX_SAFE_INTEGER,Math.floor(Number(player.xp)||0)));player.nx=nxForLevel(player.lv);
  player.pot=Array.isArray(p.pot)?p.pot.slice(0,8).map(v=>Math.max(0,Math.min(999,Math.floor(Number(v)||0)))):[2,0,0,0];
  if(Array.isArray(p.ow)) player.ow=p.ow.filter(v=>Number.isInteger(v)&&v>=0&&v<40).slice(0,40);
  if(Array.isArray(p.oa)) player.oa=p.oa.filter(v=>Number.isInteger(v)&&v>=0&&v<40).slice(0,40);
@@ -1359,7 +1380,7 @@ app.post('/api/save',requireUser,(req,res)=>{
     }
     // 레벨은 더 높은 쪽 유지 (롤백 방지)
     if((prev.lv|0) > (np.lv|0)){
-      np.lv = prev.lv; np.xp = Math.max(np.xp|0, prev.xp|0); np.nx = prev.nx || np.nx;
+      np.lv = prev.lv; np.xp = Math.max(Number(np.xp)||0, Number(prev.xp)||0); np.nx = nxForLevel(np.lv);
     }
   }
   if(prev&&prev.bank) state.player.bank=prev.bank;
@@ -1533,9 +1554,7 @@ app.post('/api/admin/set-level', requireStaff, (req,res)=>{
   }
   p.lv=lv;
   p.xp=0;
-  // Lv50 이후 경험치 곡선 완화 (1.15 → 1.10)
-  if(lv<=50) p.nx=Math.max(30, Math.floor(30*Math.pow(1.15, lv-1)));
-  else p.nx=Math.max(30, Math.floor(30*Math.pow(1.15, 49)*Math.pow(1.10, lv-50)));
+  p.nx=nxForLevel(lv);
   // 체력도 대략 맞춤
   const base=100;
   p.mhp=Math.max(p.mhp||base, base + (lv-1)*15);
@@ -2161,7 +2180,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   p.rcoin = (p.rcoin|0) + rcoinGain;
   p.rstat = (p.rstat|0) + rstatGain;
   p.title = REBIRTH_TITLES[Math.min(REBIRTH_TITLES.length-1, p.rebirth)] || '환생자';
-  p.lv = 1; p.xp = 0; p.nx = 30;
+  p.lv = 1; p.xp = 0; p.nx = nxForLevel(1);
   // 환생 시 코인·장비 초기화 (특성/룬/환생코인/강화재료(items)는 유지)
   p.coin = 0;
   // 환생 전용 장비(환생의 검/영겁의 검, 환생의 갑옷/영겁의 갑옷)는 초기화하지 않고 유지
@@ -2713,7 +2732,7 @@ wss.on('connection',ws=>{
     if(!m||typeof m.type!=='string') return;
 
     if(m.type==='move'){
-      if(!Number.isFinite(m.x)||!Number.isFinite(m.z)||!Number.isFinite(m.y)||!Number.isFinite(m.face)||Math.abs(m.x)>1100||m.z>400||m.z<-2400||m.y<0||m.y>40){
+      if(!Number.isFinite(m.x)||!Number.isFinite(m.z)||!Number.isFinite(m.y)||!Number.isFinite(m.face)||Math.abs(m.x)>2000||m.z>400||m.z<-2400||m.y<0||m.y>40){
         ws.strikes=(ws.strikes||0)+1; if(ws.strikes>=5)ws.close(1008,'state'); return;
       }
       Object.assign(p,{x:m.x,z:m.z,y:m.y,face:m.face});
