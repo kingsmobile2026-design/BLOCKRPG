@@ -20,7 +20,7 @@ try { fs.mkdirSync(DATA_DIR, {recursive:true}); } catch {}
 
 // ===== MongoDB 저장소 (MongoClient) =====
 const { MongoClient } = require('mongodb');
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kingsmobile2026_db_user:a20140205g@cluster0.ux498h7.mongodb.net/';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://a01074202262_db_user:qAuTLKnGYOe3omLh@cluster0.kyqbii7.mongodb.net/';
 const MONGO_DB_NAME = process.env.MONGO_DB || 'blockrpg';
 const MONGO_DOC_ID = 'main';
 const mongoClient = new MongoClient(MONGO_URI, {
@@ -83,6 +83,7 @@ async function connectMongo() {
   if (!db.mapOverrides.spawns || typeof db.mapOverrides.spawns !== 'object') db.mapOverrides.spawns = {};
   try { applySpawns(db.mapOverrides.spawns); } catch (e) { console.log('applySpawns:', e.message); }
   _mongoReady = true;
+  try { sanitizeAllAdminFlags(); } catch (e) { console.error('sanitize admins', e.message); }
 }
 
 function persist() {
@@ -95,6 +96,56 @@ function persist() {
     console.error('persist failed:', e.message);
     throw e;
   });
+}
+
+// MongoDB 에서 해당 유저의 salt/passwordHash 를 다시 읽어 메모리에 반영 (다중 인스턴스·저장 레이스 대응)
+async function reloadUserAuth(key) {
+  if (!mongoCol || !key) return db.users[key] || null;
+  try {
+    const doc = await mongoCol.findOne(
+      { _id: MONGO_DOC_ID },
+      { projection: { ['users.' + key]: 1 } }
+    );
+    const remote = doc && doc.users && doc.users[key];
+    if (remote && typeof remote === 'object') {
+      if (!db.users[key]) db.users[key] = remote;
+      else {
+        if (typeof remote.passwordHash === 'string') db.users[key].passwordHash = remote.passwordHash;
+        if (typeof remote.salt === 'string') db.users[key].salt = remote.salt;
+        if (remote.isAdmin != null) db.users[key].isAdmin = !!remote.isAdmin;
+        if (remote.isSubAdmin != null) db.users[key].isSubAdmin = !!remote.isSubAdmin;
+        if (remote.banned != null) db.users[key].banned = !!remote.banned;
+        if (typeof remote.username === 'string') db.users[key].username = remote.username;
+      }
+    }
+  } catch (e) {
+    console.error('reloadUserAuth', key, e.message);
+  }
+  if (db.users[key]) sanitizeAdminFlags(db.users[key], key);
+  return db.users[key] || null;
+}
+
+// 비밀번호를 메모리 + MongoDB 필드 단위로 동시 갱신 (전체 문서 덮어쓰기 레이스 방지)
+async function setUserPassword(key, password) {
+  const u = db.users[key];
+  if (!u) throw new Error('user not found');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = hashPassword(password, salt);
+  u.salt = salt;
+  u.passwordHash = passwordHash;
+  if (!mongoCol) throw new Error('MongoDB not connected');
+  // 1) 해당 유저 인증 필드만 즉시 기록
+  await mongoCol.updateOne(
+    { _id: MONGO_DOC_ID },
+    { $set: {
+      ['users.' + key + '.salt']: salt,
+      ['users.' + key + '.passwordHash']: passwordHash,
+      updatedAt: new Date()
+    }}
+  );
+  // 2) 전체 문서도 동기화 (다른 필드와 일치)
+  await persist();
+  return u;
 }
 
 // 저장 요청이 몰려도 1초에 한 번만 MongoDB 에 쓴다
@@ -221,7 +272,7 @@ const QUESTS = {
 
 // ===== 서버 권한 몬스터 엔진 (위치 / 체력 / AI / 공격 / 리스폰 / 보상 전부 서버가 결정) =====
 // WORLD 는 index.html 의 최종 몬스터 정의(MT), 구역(ZD), 절벽(BK), 보스 위치를 추출한 값입니다.
-const WORLD = {"MT":{"slime":{"hp":30,"dmg":6,"xp":12,"g":3,"sp":3.6,"reach":1.8,"rt":8,"sc":1,"n":22,"nm":"슬라임"},"wolf":{"hp":55,"dmg":10,"xp":20,"g":6,"sp":8,"reach":2.2,"rt":8,"sc":1,"n":18,"nm":"늑대"},"goblin":{"hp":135,"dmg":18,"xp":51,"g":16,"sp":5,"reach":2.3,"rt":10,"sc":1.1,"n":14,"nm":"고블린"},"skeleton":{"hp":252,"dmg":30,"xp":88,"g":28,"sp":5.5,"reach":2.4,"rt":12,"sc":1.15,"n":12,"nm":"해골 병사"},"golem":{"hp":3750,"dmg":76,"xp":528,"g":216,"sp":3,"reach":4.4,"rt":30,"sc":2.4,"n":6,"ag":20,"cd":1.8,"nm":"골렘"},"mushroom":{"hp":40,"dmg":8,"xp":16,"g":4,"sp":4,"reach":1.7,"rt":8,"sc":1,"n":14,"nm":"독버섯"},"bear":{"hp":130,"dmg":17,"xp":38,"g":12,"sp":5,"reach":3,"rt":12,"sc":1.5,"n":10,"nm":"불곰"},"orc":{"hp":304,"dmg":33,"xp":104,"g":35,"sp":4.8,"reach":3,"rt":14,"sc":1.4,"n":9,"nm":"오크 전사"},"ghost":{"hp":216,"dmg":39,"xp":128,"g":41,"sp":6,"reach":2.2,"rt":14,"sc":1,"n":9,"nm":"유령"},"dragon":{"hp":600000,"dmg":1000,"xp":40000,"g":30000,"sp":5,"reach":8,"rt":300,"sc":2.8,"n":1,"ag":29.4,"cd":2,"boss":1,"fix":[-150,-2000],"nm":"에인션트 드래곤"},"frostwolf":{"hp":2700,"dmg":100,"xp":288,"g":96,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":14,"nm":"서리 늑대"},"yeti":{"hp":5850,"dmg":155,"xp":528,"g":192,"sp":5,"reach":3.4,"rt":14,"sc":1.7,"n":9,"nm":"예티"},"scorpion":{"hp":4680,"dmg":180,"xp":624,"g":216,"sp":6,"reach":2.6,"rt":10,"sc":1.2,"n":14,"nm":"거대 전갈"},"mummy":{"hp":9120,"dmg":228,"xp":912,"g":312,"sp":4.5,"reach":2.6,"rt":14,"sc":1.2,"n":10,"nm":"미라"},"toad":{"hp":14280,"dmg":283,"xp":1344,"g":456,"sp":5,"reach":2.8,"rt":12,"sc":1.3,"n":14,"nm":"독두꺼비"},"witch":{"hp":10200,"dmg":350,"xp":1680,"g":576,"sp":5,"reach":2.6,"rt":15,"sc":1.15,"n":9,"nm":"늪지 마녀"},"imp":{"hp":22800,"dmg":435,"xp":2160,"g":720,"sp":8.5,"reach":2.4,"rt":10,"sc":0.95,"n":14,"nm":"임프"},"hellhound":{"hp":38400,"dmg":528,"xp":3120,"g":1080,"sp":10,"reach":3,"rt":14,"sc":1.3,"n":10,"nm":"지옥견"},"darkknight":{"hp":46800,"dmg":735,"xp":4800,"g":1680,"sp":5.5,"reach":3.2,"rt":18,"sc":1.5,"n":8,"nm":"암흑 기사"},"demonlord":{"hp":2000000,"dmg":2000,"xp":200000,"g":120000,"sp":5,"reach":7,"rt":600,"sc":3.2,"n":1,"ag":32.2,"cd":2,"boss":1,"fix":[365,-820],"nm":"마왕"},"kingslime":{"hp":3000,"dmg":35,"xp":500,"g":400,"sp":3.5,"reach":3.8,"rt":60,"sc":3,"n":1,"ag":19.6,"cd":1.6,"boss":1,"fix":[0,-225],"nm":"킹 슬라임"},"wolfalpha":{"hp":9000,"dmg":110,"xp":1800,"g":1200,"sp":9,"reach":4,"rt":90,"sc":2.2,"n":1,"ag":23.8,"cd":1.4,"boss":1,"fix":[-185,-240],"nm":"늑대 대장"},"goblinking":{"hp":25000,"dmg":220,"xp":6000,"g":4000,"sp":5.5,"reach":4.5,"rt":120,"sc":2.4,"n":1,"ag":25.2,"cd":1.6,"boss":1,"fix":[185,-240],"nm":"고블린 왕"},"lich":{"hp":150000,"dmg":450,"xp":15000,"g":12000,"sp":5.5,"reach":5,"rt":180,"sc":2.6,"n":1,"ag":26.6,"cd":1.8,"boss":1,"fix":[495,-770],"nm":"해골 군주"},"boar":{"hp":70,"dmg":12,"xp":24,"g":7,"sp":6.5,"reach":2.3,"rt":8,"sc":1.1,"n":10,"nm":"멧돼지"},"spider":{"hp":150,"dmg":22,"xp":45,"g":14,"sp":7,"reach":2.4,"rt":9,"sc":1.2,"n":10,"nm":"거대 거미"},"goblinshaman":{"hp":330,"dmg":36,"xp":70,"g":24,"sp":4.5,"reach":2.6,"rt":10,"sc":1.1,"n":8,"nm":"고블린 주술사"},"zombie":{"hp":420,"dmg":44,"xp":90,"g":30,"sp":3.5,"reach":2.5,"rt":10,"sc":1.15,"n":9,"nm":"좀비"},"gargoyle":{"hp":4500,"dmg":90,"xp":450,"g":150,"sp":6,"reach":2.8,"rt":14,"sc":1.3,"n":4,"nm":"가고일"},"icegolem":{"hp":9000,"dmg":190,"xp":675,"g":225,"sp":4,"reach":3.6,"rt":14,"sc":2,"n":8,"nm":"얼음 골렘"},"cactus":{"hp":10800,"dmg":230,"xp":900,"g":300,"sp":4,"reach":2.8,"rt":12,"sc":1.3,"n":10,"nm":"선인장 몬스터"},"lizardman":{"hp":19500,"dmg":330,"xp":1500,"g":495,"sp":6,"reach":2.9,"rt":12,"sc":1.3,"n":10,"nm":"리자드맨"},"flamegolem":{"hp":32000,"dmg":560,"xp":2700,"g":900,"sp":4.5,"reach":3.8,"rt":16,"sc":2.1,"n":8,"nm":"화염 골렘"},"wraith":{"hp":30000,"dmg":800,"xp":3000,"g":1000,"sp":7,"reach":2.6,"rt":16,"sc":1.1,"n":8,"nm":"망령"},"bee":{"hp":60,"dmg":14,"xp":22,"g":6,"sp":8.5,"reach":2,"rt":8,"sc":1.2,"n":10,"nm":"거대 벌"},"treant":{"hp":220,"dmg":28,"xp":55,"g":18,"sp":3.5,"reach":3,"rt":10,"sc":1.6,"n":8,"nm":"나무 정령"},"hobgoblin":{"hp":380,"dmg":48,"xp":85,"g":28,"sp":5,"reach":2.7,"rt":10,"sc":1.3,"n":8,"nm":"홍고블린"},"necromancer":{"hp":500,"dmg":55,"xp":120,"g":40,"sp":4.5,"reach":2.6,"rt":12,"sc":1.15,"n":7,"nm":"네크로맨서"},"minotaur":{"hp":5400,"dmg":110,"xp":570,"g":195,"sp":5.5,"reach":3.4,"rt":14,"sc":1.8,"n":4,"nm":"미노타우르스"},"frostmage":{"hp":9900,"dmg":210,"xp":780,"g":255,"sp":4.5,"reach":2.8,"rt":12,"sc":1.2,"n":8,"nm":"얼음 마법사"},"anubis":{"hp":12600,"dmg":260,"xp":1050,"g":345,"sp":5.5,"reach":3,"rt":12,"sc":1.3,"n":8,"nm":"아누비스 전사"},"snake":{"hp":22500,"dmg":360,"xp":1725,"g":570,"sp":7,"reach":3.2,"rt":12,"sc":1.4,"n":10,"nm":"거대 뱀"},"pyromancer":{"hp":42000,"dmg":520,"xp":2550,"g":840,"sp":5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"화염술사"},"vampire":{"hp":33000,"dmg":900,"xp":3400,"g":1100,"sp":7.5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"흡혈귀"},"frostgiant":{"hp":200000,"dmg":600,"xp":30000,"g":25000,"sp":5,"reach":6,"rt":240,"sc":3,"n":1,"ag":28,"cd":1.8,"boss":1,"fix":[365,-660],"nm":"서리 거인"},"pharaoh":{"hp":300000,"dmg":800,"xp":45000,"g":35000,"sp":5.5,"reach":5.5,"rt":270,"sc":2.6,"n":1,"ag":29,"cd":1.7,"boss":1,"fix":[365,-700],"nm":"파라오"},"hydra":{"hp":450000,"dmg":1100,"xp":70000,"g":55000,"sp":5,"reach":7,"rt":300,"sc":3,"n":1,"ag":30,"cd":2,"boss":1,"fix":[365,-740],"nm":"히드라"},"balrog":{"hp":800000,"dmg":1600,"xp":120000,"g":90000,"sp":5.5,"reach":7,"rt":420,"sc":3.4,"n":1,"ag":31,"cd":2,"boss":1,"fix":[365,-780],"nm":"발록"},"mgoat":{"hp":170,"dmg":21,"xp":44,"g":14,"sp":6.5,"reach":2.4,"rt":9,"sc":1.15,"n":8,"nm":"산양"},"bandit":{"hp":280,"dmg":32,"xp":68,"g":24,"sp":5.2,"reach":2.6,"rt":11,"sc":1.1,"n":8,"nm":"산적"},"worldboss":{"hp":8000000,"dmg":5000,"xp":3000000,"g":1500000,"sp":6.5,"reach":8,"rt":600,"sc":4.5,"n":1,"ag":70,"cd":2.2,"boss":1,"fix":[760,-740],"nm":"하데스"},"crystalbeetle":{"hp":650,"dmg":70,"xp":150,"g":50,"sp":5,"reach":2.6,"rt":10,"sc":1.25,"n":12,"nm":"수정 딱정벌레"},"crystalbat":{"hp":520,"dmg":80,"xp":170,"g":56,"sp":9.5,"reach":2.2,"rt":9,"sc":1.0,"n":12,"nm":"수정 박쥐"},"prismwisp":{"hp":900,"dmg":110,"xp":240,"g":80,"sp":6.5,"reach":2.4,"rt":11,"sc":1.0,"n":8,"nm":"프리즘 정령"},"amethystgolem":{"hp":1700,"dmg":125,"xp":340,"g":120,"sp":3.6,"reach":4.0,"rt":16,"sc":2.0,"n":6,"ag":20,"cd":1.8,"nm":"자수정 골렘"},"statueguard":{"hp":1500,"dmg":115,"xp":300,"g":100,"sp":4.2,"reach":3.2,"rt":14,"sc":1.7,"n":8,"nm":"석상 수호병"},"harpy":{"hp":800,"dmg":105,"xp":230,"g":78,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":10,"nm":"하피"},"cursedarmor":{"hp":1200,"dmg":140,"xp":280,"g":96,"sp":5.5,"reach":3.0,"rt":12,"sc":1.4,"n":8,"nm":"저주받은 갑옷"},"mimic":{"hp":1000,"dmg":150,"xp":260,"g":200,"sp":6,"reach":2.4,"rt":12,"sc":1.2,"n":6,"nm":"미믹"}},"ZD":{"village":[[-40,40,-40,40]],"corridor":[[-8,8,-150,-40]],"plains":[[-110,110,-300,-150]],"forest":[[-260,-110,-300,-170]],"camp":[[110,260,-300,-170]],"hill":[[-160,80,-440,-300]],"cavearea":[[-260,-160,-440,-300]],"bentry":[[380,480,-640,-560]],"grave":[[430,560,-840,-640]],"snow":[[300,430,-680,-640]],"desert":[[300,430,-720,-680]],"swamp":[[300,430,-760,-720]],"hell":[[300,430,-800,-760]],"dark":[[300,430,-840,-800]],"centry":[[-220,-80,-1900,-1800]],"golem":[[-300,0,-2060,-1900]],"arena":[[700,820,-780,-660]],"crystal":[[80,260,-440,-300]],"ruins":[[-400,-260,-300,-170]],"volcano":[[-420,-260,-460,-280]]},"ZT":{"slime":"plains","mushroom":"plains","boar":"plains","bee":"plains","wolf":"forest","bear":"forest","spider":"forest","treant":"forest","goblin":"camp","orc":"camp","hobgoblin":"camp","goblinshaman":"camp","skeleton":"grave","ghost":"grave","zombie":"grave","necromancer":"grave","wraith":"grave","vampire":"grave","frostwolf":"snow","yeti":"snow","frostmage":"snow","scorpion":"desert","mummy":"desert","cactus":"desert","lizardman":"desert","anubis":"desert","toad":"swamp","witch":"swamp","snake":"swamp","imp":"hell","hellhound":"hell","pyromancer":"hell","darkknight":"dark","golem":"golem","gargoyle":"golem","icegolem":"golem","flamegolem":"golem","minotaur":"golem","mgoat":"hill","bandit":"hill","crystalbeetle":"crystal","crystalbat":"crystal","prismwisp":"crystal","amethystgolem":"crystal","statueguard":"ruins","harpy":"ruins","cursedarmor":"ruins","mimic":"ruins"},"BK":[[-60,-30,-390,-340],[10,40,-420,-380],[428,432,-840,-800],[428,432,-770,-720],[428,432,-690,-640]],"BOSS":{"kingslime":[0,-225],"wolfalpha":[-185,-240],"goblinking":[185,-240],"lich":[495,-770],"frostgiant":[365,-660],"pharaoh":[365,-700],"hydra":[365,-740],"balrog":[365,-780],"demonlord":[365,-820],"dragon":[-150,-2000],"worldboss":[760,-740],"volcanolord":[-340,-370]}};
+const WORLD = {"MT":{"slime":{"hp":30,"dmg":6,"xp":12,"g":3,"sp":3.6,"reach":1.8,"rt":8,"sc":1,"n":22,"nm":"슬라임"},"wolf":{"hp":55,"dmg":10,"xp":20,"g":6,"sp":8,"reach":2.2,"rt":8,"sc":1,"n":18,"nm":"늑대"},"goblin":{"hp":135,"dmg":18,"xp":51,"g":16,"sp":5,"reach":2.3,"rt":10,"sc":1.1,"n":14,"nm":"고블린"},"skeleton":{"hp":252,"dmg":30,"xp":88,"g":28,"sp":5.5,"reach":2.4,"rt":12,"sc":1.15,"n":12,"nm":"해골 병사"},"golem":{"hp":3750,"dmg":76,"xp":528,"g":216,"sp":3,"reach":4.4,"rt":30,"sc":2.4,"n":6,"ag":20,"cd":1.8,"nm":"골렘"},"mushroom":{"hp":40,"dmg":8,"xp":16,"g":4,"sp":4,"reach":1.7,"rt":8,"sc":1,"n":14,"nm":"독버섯"},"bear":{"hp":130,"dmg":17,"xp":38,"g":12,"sp":5,"reach":3,"rt":12,"sc":1.5,"n":10,"nm":"불곰"},"orc":{"hp":304,"dmg":33,"xp":104,"g":35,"sp":4.8,"reach":3,"rt":14,"sc":1.4,"n":9,"nm":"오크 전사"},"ghost":{"hp":216,"dmg":39,"xp":128,"g":41,"sp":6,"reach":2.2,"rt":14,"sc":1,"n":9,"nm":"유령"},"dragon":{"hp":600000,"dmg":1000,"xp":40000,"g":30000,"sp":5,"reach":8,"rt":300,"sc":2.8,"n":1,"ag":29.4,"cd":2,"boss":1,"fix":[-150,-2000],"nm":"에인션트 드래곤"},"frostwolf":{"hp":2700,"dmg":100,"xp":288,"g":96,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":14,"nm":"서리 늑대"},"yeti":{"hp":5850,"dmg":155,"xp":528,"g":192,"sp":5,"reach":3.4,"rt":14,"sc":1.7,"n":9,"nm":"예티"},"scorpion":{"hp":4680,"dmg":180,"xp":624,"g":216,"sp":6,"reach":2.6,"rt":10,"sc":1.2,"n":14,"nm":"거대 전갈"},"mummy":{"hp":9120,"dmg":228,"xp":912,"g":312,"sp":4.5,"reach":2.6,"rt":14,"sc":1.2,"n":10,"nm":"미라"},"toad":{"hp":14280,"dmg":283,"xp":1344,"g":456,"sp":5,"reach":2.8,"rt":12,"sc":1.3,"n":14,"nm":"독두꺼비"},"witch":{"hp":10200,"dmg":350,"xp":1680,"g":576,"sp":5,"reach":2.6,"rt":15,"sc":1.15,"n":9,"nm":"늪지 마녀"},"imp":{"hp":22800,"dmg":435,"xp":2160,"g":720,"sp":8.5,"reach":2.4,"rt":10,"sc":0.95,"n":14,"nm":"임프"},"hellhound":{"hp":38400,"dmg":528,"xp":3120,"g":1080,"sp":10,"reach":3,"rt":14,"sc":1.3,"n":10,"nm":"지옥견"},"darkknight":{"hp":46800,"dmg":735,"xp":4800,"g":1680,"sp":5.5,"reach":3.2,"rt":18,"sc":1.5,"n":8,"nm":"암흑 기사"},"demonlord":{"hp":2000000,"dmg":2000,"xp":200000,"g":120000,"sp":5,"reach":7,"rt":600,"sc":3.2,"n":1,"ag":32.2,"cd":2,"boss":1,"fix":[365,-820],"nm":"마왕"},"kingslime":{"hp":3000,"dmg":35,"xp":500,"g":400,"sp":3.5,"reach":3.8,"rt":60,"sc":3,"n":1,"ag":19.6,"cd":1.6,"boss":1,"fix":[0,-225],"nm":"킹 슬라임"},"wolfalpha":{"hp":9000,"dmg":110,"xp":1800,"g":1200,"sp":9,"reach":4,"rt":90,"sc":2.2,"n":1,"ag":23.8,"cd":1.4,"boss":1,"fix":[-185,-240],"nm":"늑대 대장"},"goblinking":{"hp":25000,"dmg":220,"xp":6000,"g":4000,"sp":5.5,"reach":4.5,"rt":120,"sc":2.4,"n":1,"ag":25.2,"cd":1.6,"boss":1,"fix":[185,-240],"nm":"고블린 왕"},"lich":{"hp":150000,"dmg":450,"xp":15000,"g":12000,"sp":5.5,"reach":5,"rt":180,"sc":2.6,"n":1,"ag":26.6,"cd":1.8,"boss":1,"fix":[495,-770],"nm":"해골 군주"},"boar":{"hp":70,"dmg":12,"xp":24,"g":7,"sp":6.5,"reach":2.3,"rt":8,"sc":1.1,"n":10,"nm":"멧돼지"},"spider":{"hp":150,"dmg":22,"xp":45,"g":14,"sp":7,"reach":2.4,"rt":9,"sc":1.2,"n":10,"nm":"거대 거미"},"goblinshaman":{"hp":330,"dmg":36,"xp":70,"g":24,"sp":4.5,"reach":2.6,"rt":10,"sc":1.1,"n":8,"nm":"고블린 주술사"},"zombie":{"hp":420,"dmg":44,"xp":90,"g":30,"sp":3.5,"reach":2.5,"rt":10,"sc":1.15,"n":9,"nm":"좀비"},"gargoyle":{"hp":4500,"dmg":90,"xp":450,"g":150,"sp":6,"reach":2.8,"rt":14,"sc":1.3,"n":4,"nm":"가고일"},"icegolem":{"hp":9000,"dmg":190,"xp":675,"g":225,"sp":4,"reach":3.6,"rt":14,"sc":2,"n":8,"nm":"얼음 골렘"},"cactus":{"hp":10800,"dmg":230,"xp":900,"g":300,"sp":4,"reach":2.8,"rt":12,"sc":1.3,"n":10,"nm":"선인장 몬스터"},"lizardman":{"hp":19500,"dmg":330,"xp":1500,"g":495,"sp":6,"reach":2.9,"rt":12,"sc":1.3,"n":10,"nm":"리자드맨"},"flamegolem":{"hp":32000,"dmg":560,"xp":2700,"g":900,"sp":4.5,"reach":3.8,"rt":16,"sc":2.1,"n":8,"nm":"화염 골렘"},"wraith":{"hp":30000,"dmg":800,"xp":3000,"g":1000,"sp":7,"reach":2.6,"rt":16,"sc":1.1,"n":8,"nm":"망령"},"bee":{"hp":60,"dmg":14,"xp":22,"g":6,"sp":8.5,"reach":2,"rt":8,"sc":1.2,"n":10,"nm":"거대 벌"},"treant":{"hp":220,"dmg":28,"xp":55,"g":18,"sp":3.5,"reach":3,"rt":10,"sc":1.6,"n":8,"nm":"나무 정령"},"hobgoblin":{"hp":380,"dmg":48,"xp":85,"g":28,"sp":5,"reach":2.7,"rt":10,"sc":1.3,"n":8,"nm":"홍고블린"},"necromancer":{"hp":500,"dmg":55,"xp":120,"g":40,"sp":4.5,"reach":2.6,"rt":12,"sc":1.15,"n":7,"nm":"네크로맨서"},"minotaur":{"hp":5400,"dmg":110,"xp":570,"g":195,"sp":5.5,"reach":3.4,"rt":14,"sc":1.8,"n":4,"nm":"미노타우르스"},"frostmage":{"hp":9900,"dmg":210,"xp":780,"g":255,"sp":4.5,"reach":2.8,"rt":12,"sc":1.2,"n":8,"nm":"얼음 마법사"},"anubis":{"hp":12600,"dmg":260,"xp":1050,"g":345,"sp":5.5,"reach":3,"rt":12,"sc":1.3,"n":8,"nm":"아누비스 전사"},"snake":{"hp":22500,"dmg":360,"xp":1725,"g":570,"sp":7,"reach":3.2,"rt":12,"sc":1.4,"n":10,"nm":"거대 뱀"},"pyromancer":{"hp":42000,"dmg":520,"xp":2550,"g":840,"sp":5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"화염술사"},"vampire":{"hp":33000,"dmg":900,"xp":3400,"g":1100,"sp":7.5,"reach":2.8,"rt":14,"sc":1.2,"n":8,"nm":"흡혈귀"},"frostgiant":{"hp":200000,"dmg":600,"xp":30000,"g":25000,"sp":5,"reach":6,"rt":240,"sc":3,"n":1,"ag":28,"cd":1.8,"boss":1,"fix":[365,-660],"nm":"서리 거인"},"pharaoh":{"hp":300000,"dmg":800,"xp":45000,"g":35000,"sp":5.5,"reach":5.5,"rt":270,"sc":2.6,"n":1,"ag":29,"cd":1.7,"boss":1,"fix":[365,-700],"nm":"파라오"},"hydra":{"hp":450000,"dmg":1100,"xp":70000,"g":55000,"sp":5,"reach":7,"rt":300,"sc":3,"n":1,"ag":30,"cd":2,"boss":1,"fix":[365,-740],"nm":"히드라"},"balrog":{"hp":800000,"dmg":1600,"xp":120000,"g":90000,"sp":5.5,"reach":7,"rt":420,"sc":3.4,"n":1,"ag":31,"cd":2,"boss":1,"fix":[365,-780],"nm":"발록"},"mgoat":{"hp":170,"dmg":21,"xp":44,"g":14,"sp":6.5,"reach":2.4,"rt":9,"sc":1.15,"n":8,"nm":"산양"},"bandit":{"hp":280,"dmg":32,"xp":68,"g":24,"sp":5.2,"reach":2.6,"rt":11,"sc":1.1,"n":8,"nm":"산적"},"worldboss":{"hp":8000000,"dmg":5000,"xp":3000000,"g":1500000,"sp":6.5,"reach":8,"rt":600,"sc":4.5,"n":1,"ag":70,"cd":2.2,"boss":1,"fix":[760,-740],"nm":"하데스"},"crystalbeetle":{"hp":650,"dmg":70,"xp":150,"g":50,"sp":5,"reach":2.6,"rt":10,"sc":1.25,"n":12,"nm":"수정 딱정벌레"},"crystalbat":{"hp":520,"dmg":80,"xp":170,"g":56,"sp":9.5,"reach":2.2,"rt":9,"sc":1.0,"n":12,"nm":"수정 박쥐"},"prismwisp":{"hp":900,"dmg":110,"xp":240,"g":80,"sp":6.5,"reach":2.4,"rt":11,"sc":1.0,"n":8,"nm":"프리즘 정령"},"amethystgolem":{"hp":1700,"dmg":125,"xp":340,"g":120,"sp":3.6,"reach":4.0,"rt":16,"sc":2.0,"n":6,"ag":20,"cd":1.8,"nm":"자수정 골렘"},"statueguard":{"hp":1500,"dmg":115,"xp":300,"g":100,"sp":4.2,"reach":3.2,"rt":14,"sc":1.7,"n":8,"nm":"석상 수호병"},"harpy":{"hp":800,"dmg":105,"xp":230,"g":78,"sp":9,"reach":2.4,"rt":10,"sc":1.1,"n":10,"nm":"하피"},"cursedarmor":{"hp":1200,"dmg":140,"xp":280,"g":96,"sp":5.5,"reach":3.0,"rt":12,"sc":1.4,"n":8,"nm":"저주받은 갑옷"},"mimic":{"hp":1000,"dmg":150,"xp":260,"g":200,"sp":6,"reach":2.4,"rt":12,"sc":1.2,"n":6,"nm":"미믹"}},"ZD":{"village":[[-40,40,-40,42]],"corridor":[[-8,8,-150,-40]],"plains":[[-110,110,-300,-150]],"forest":[[-260,-110,-300,-170]],"camp":[[110,260,-300,-170]],"hill":[[-160,80,-440,-300]],"cavearea":[[-260,-160,-440,-300]],"bentry":[[380,480,-640,-560]],"grave":[[430,560,-840,-640]],"snow":[[300,430,-680,-640]],"desert":[[300,430,-720,-680]],"swamp":[[300,430,-760,-720]],"hell":[[300,430,-800,-760]],"dark":[[300,430,-840,-800]],"centry":[[-220,-80,-1900,-1800]],"golem":[[-300,0,-2060,-1900]],"arena":[[700,820,-780,-660]],"crystal":[[80,260,-440,-300]],"ruins":[[-400,-260,-300,-170]],"volcano":[[-420,-260,-460,-280]]},"ZT":{"slime":"plains","mushroom":"plains","boar":"plains","bee":"plains","wolf":"forest","bear":"forest","spider":"forest","treant":"forest","goblin":"camp","orc":"camp","hobgoblin":"camp","goblinshaman":"camp","skeleton":"grave","ghost":"grave","zombie":"grave","necromancer":"grave","wraith":"grave","vampire":"grave","frostwolf":"snow","yeti":"snow","frostmage":"snow","scorpion":"desert","mummy":"desert","cactus":"desert","lizardman":"desert","anubis":"desert","toad":"swamp","witch":"swamp","snake":"swamp","imp":"hell","hellhound":"hell","pyromancer":"hell","darkknight":"dark","golem":"golem","gargoyle":"golem","icegolem":"golem","flamegolem":"golem","minotaur":"golem","mgoat":"hill","bandit":"hill","crystalbeetle":"crystal","crystalbat":"crystal","prismwisp":"crystal","amethystgolem":"crystal","statueguard":"ruins","harpy":"ruins","cursedarmor":"ruins","mimic":"ruins"},"BK":[[-60,-30,-390,-340],[10,40,-420,-380],[428,432,-840,-800],[428,432,-770,-720],[428,432,-690,-640]],"BOSS":{"kingslime":[0,-225],"wolfalpha":[-185,-240],"goblinking":[185,-240],"lich":[495,-770],"frostgiant":[365,-660],"pharaoh":[365,-700],"hydra":[365,-740],"balrog":[365,-780],"demonlord":[365,-820],"dragon":[-150,-2000],"worldboss":[760,-740],"volcanolord":[-340,-370]}};
 const MT = WORLD.MT;
 
 // 신규 몬스터 스탯
@@ -252,6 +303,28 @@ Object.assign(WORLD.ZT, {
 // ===== 천상 지역 (최고 난이도, 화산 북쪽) =====
 WORLD.ZD.heaven = [[-420,-260,-520,-460]];
 WORLD.ZD.abyss = [[-520,-360,-620,-520]]; // 심연 지대 (천상 서쪽)
+// 시작마을 북쪽(+z) 바다 · 심해 · 깊은 심해
+WORLD.ZD.sea = [[-90,90,72,102]];       // 심해 (경사 끝 ~ 다음 경사 전)
+WORLD.ZD.deepsea = [[-90,90,132,180]];  // 깊은 심해
+Object.assign(WORLD.MT, {
+  fish:{hp:800,dmg:40,xp:120,g:40,sp:6,reach:2.2,rt:10,sc:1.1,n:14,nm:'심해 어류'},
+  shark:{hp:2500,dmg:90,xp:400,g:120,sp:8,reach:3.2,rt:14,sc:1.6,n:10,nm:'상어'},
+  jellyfish:{hp:1200,dmg:55,xp:200,g:60,sp:4,reach:2.5,rt:12,sc:1.2,n:12,nm:'해파리'},
+  crab:{hp:3000,dmg:80,xp:350,g:100,sp:4.5,reach:2.8,rt:14,sc:1.4,n:10,nm:'거대 게'},
+  seaserpent:{hp:80000,dmg:400,xp:8000,g:3000,sp:6,reach:5,rt:180,sc:2.8,n:1,ag:28,cd:1.8,boss:1,pos:[0,90],nm:'바다뱀'},
+  // 깊은 심해: 체력 100만+, 데미지 5천+
+  abyssfish:{hp:1200000,dmg:5200,xp:80000,g:25000,sp:6.5,reach:3.0,rt:16,sc:1.5,n:12,nm:'심연어'},
+  leviathan:{hp:2500000,dmg:7000,xp:180000,g:60000,sp:5.5,reach:4.5,rt:20,sc:2.4,n:8,nm:'리바이어던 새끼'},
+  angler:{hp:1800000,dmg:6000,xp:120000,g:40000,sp:5,reach:3.5,rt:18,sc:1.8,n:10,nm:'아귀'},
+  kraken:{hp:15000000,dmg:12000,xp:1500000,g:400000,sp:4.5,reach:8,rt:480,sc:4.0,n:1,ag:40,cd:2.2,boss:1,pos:[0,145],nm:'크라켄'}
+});
+Object.assign(WORLD.ZT, {
+  fish:'sea', shark:'sea', jellyfish:'sea', crab:'sea', seaserpent:'sea',
+  abyssfish:'deepsea', leviathan:'deepsea', angler:'deepsea', kraken:'deepsea'
+});
+WORLD.BOSS.seaserpent=[0,90];
+WORLD.BOSS.kraken=[0,145];
+
 Object.assign(WORLD.MT, {
   cherub:{hp:60000,dmg:900,xp:7000,g:2500,sp:6,reach:2.6,rt:14,sc:1.3,n:10,nm:'케루빔'},
   seraphim:{hp:80000,dmg:1100,xp:9000,g:3200,sp:6.5,reach:2.8,rt:15,sc:1.4,n:10,nm:'하급 천사'},
@@ -325,6 +398,14 @@ Object.assign(WORLD.MT, {
 Object.assign(WORLD.ZT, {starguard:'nebula',nebulafox:'nebula',astralmage:'nebula',astralguardian:'nebula'});
 WORLD.BOSS.astralguardian=[1290,-1370];
 // ===== /성운 지역 =====
+// ===== 잊혀진 신의 회랑 (신 지역 낡은 동굴 입구 → 중간 난이도 사냥터/던전) =====
+WORLD.ZD.forgotten = [[820,1060,-1480,-1260]];
+Object.assign(WORLD.MT, {
+  fallenapostle:{hp:48000000,dmg:19000,xp:5200000,g:2600000,sp:6.2,reach:3.6,rt:18,sc:2.0,n:6,ag:60,cd:1.6,nm:'타락한 신의 사도'},
+  cloudgolem:{hp:60000000,dmg:19800,xp:5600000,g:2800000,sp:4.2,reach:4.2,rt:20,sc:3.0,n:5,ag:60,cd:1.9,nm:'타락한 구름 골렘'},
+  thunderspirit:{hp:40000000,dmg:19500,xp:4900000,g:2400000,sp:9.0,reach:3.2,rt:16,sc:1.3,n:7,ag:60,cd:1.3,nm:'타락한 뇌전 정령'}
+});
+Object.assign(WORLD.ZT, {fallenapostle:'forgotten',cloudgolem:'forgotten',thunderspirit:'forgotten'});
 
 // ===== /심연 지대 =====
 
@@ -461,8 +542,12 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
   const dx = m.x - p.x, dz = m.z - p.z, dist = Math.hypot(dx, dz);
   if (elem !== 'scythethrow' && dist > d.reach + d.sc * 1.5 + 30) return;            // 너무 먼 몬스터는 타격 불가
   const hitCap = Math.max(MAX_HIT_DMG, Math.floor((Number(m.mhp) || 0) * 0.02));   // 고체력(성운/정거장) 몬스터는 최대 체력의 2%까지 1타 허용
-  dmg = Math.max(1, Math.min(hitCap, Math.floor(dmg)));
-  if (elem !== 'spear' && elem !== 'scythethrow') p.lastHit = dmg;                       // 죽음의 창 기준 데미지(클라가 bd 를 안 보낼 때 대체값)
+  const rawDmg = Math.max(1, Math.floor(dmg));
+  dmg = Math.max(1, Math.min(hitCap, rawDmg));
+  // 죽음의 창 폴백용: 히트캡에 잘리기 전 값을 기억 (클라 bd 미수신 시 환생 배율 반영된 실제 공격력 유지)
+  if (elem !== 'spear' && elem !== 'scythethrow' && elem !== 'harvest') {
+    p.lastHit = Math.max(p.lastHit || 0, rawDmg);
+  }
   if (deathOn(p, 'scythe')) dmg = Math.floor(dmg * DEATH_SCYTHE_MULT);   // 죽음의 낫: 데미지 5배
   if (false && m.shield && m.shield.crystal) {   // 보스 쉴드 비활성화
     if (Date.now() - (ws._shT || 0) > 800) {
@@ -491,8 +576,15 @@ function applyPlayerHit(p, ws, id, dmg, kb, elem) {
     return; // 쉴드 중에는 본체 피해 없음
   }
   if (d.boss) { dmg = bossLimit(m, d, ws, dmg); if (dmg < 1) return; }
-  // 하데스의 검: 적중한 몬스터에게 사망할 때까지 최대 체력의 1% 화염 지속 피해
-  if (p.hadesSword) m.fireDot = { source:p.id, next:Date.now()+1000 };
+  // 하데스의 창(장착 중): 내 데미지의 50%를 초당 화염 지속 피해로 10초 적용 (타격마다 갱신)
+  if (p.hadesSword && p.hadesSwordEquipped) {
+    m.fireDot = {
+      source: p.id,
+      dps: Math.max(1, Math.floor(dmg * 0.5)),
+      next: Date.now() + 1000,
+      until: Date.now() + 10000
+    };
+  }
   // 그로기: 크리티컬 200%
   if (m.groggy && m.groggy > 0) dmg = Math.floor(dmg * 2);
   // 넉백 약화: 일반 몬스터 35%, 보스 20%만 적용
@@ -533,6 +625,18 @@ function killMonster(m, d, p) {
           if (d.boss) tryDropRune(w, m, d);
         }
         try { w.send(JSON.stringify({ type: 'kill', id: m.id, mt: m.type, coin: rewardCoin, xp: rewardXp })); } catch {}
+        if (m.type === 'zeus' && w._userKey) {
+          try {
+            const pl = ensurePlayer(w._userKey);
+            if (pl.godQuestAccepted && !pl.godQuestDone) {
+              pl.godQuestDone = true; pl.hadesSword = true;
+              if (w.player) w.player.hadesSword = true;
+              if (db.states[w._userKey]) db.states[w._userKey].savedAt = Date.now();
+              persistSoon();
+              w.send(JSON.stringify({ type: 'hades_reward' }));
+            }
+          } catch (_) {}
+        }
         if (m.type === 'heavenlord' && !w.player.godUnlocked) {
           if (Math.random() < 0.10) { w.player.godUnlocked=true; try { w.send(JSON.stringify({type:'god_portal_unlock'})); } catch {} }
           else { try { w.send(JSON.stringify({type:'god_portal_fail'})); } catch {} }
@@ -557,9 +661,10 @@ function killMonster(m, d, p) {
   }
 }
 const MAX_HIT_DMG = 500000;
-// 레벨업에 필요한 경험치: Lv1=30. 올라가는 레벨 기준 배율 — ~Lv40: x1.5 / 41~99: x1.2 / 100~299: x1.1 / 300~: x1.05
+// 레벨업에 필요한 경험치: Lv1=30. 모든 레벨 구간에서 레벨당 x1.1 로 통일
 const NX_CAP = Number.MAX_SAFE_INTEGER;
-function nxMult(lv) { return lv <= 40 ? 1.5 : lv <= 99 ? 1.2 : lv <= 299 ? 1.1 : 1.05; }
+const NX_RATE = 1.1;
+function nxMult(lv) { return NX_RATE; }
 function nxForLevel(lv) {
   lv = Math.max(1, Math.floor(Number(lv) || 1));
   let nx = 30;
@@ -589,6 +694,24 @@ function deathSt(p) {   // 죽음의 신이면 DB 플레이어 객체, 아니면
   return pl && (pl.job === 'deathgod' || (pl.rebirth | 0) >= DEATH_REBIRTH) ? pl : null;
 }
 function deathOn(p, k) { const s = deathSt(p); return !!(s && s.deathSkills && s.deathSkills[k]); }
+// 죽음의 창/낫던지기/수확 결계 기준 데미지.
+// 클라 move 패킷의 bd(=atk(), 환생 공격 배율 포함)를 우선 사용하고,
+// baseDmg 가 없거나 오래된 lastHit(히트캡 적용됨) 폴백일 때는 저장된 rbMult.atk 를 보정 적용한다.
+function deathSkillBase(p) {
+  let base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  if (base < 1) return 0;
+  try {
+    const st = p.key && db.states[p.key] && db.states[p.key].player;
+    const mul = Math.max(1, (((st && st.rbMult && st.rbMult.atk) | 0) + 1));
+    // 클라이언트가 보낸 baseDmg 는 이미 rbMul 포함. lastHit 폴백만 보정.
+    if (!(Number(p.baseDmg) > 0) && mul > 1) base = Math.floor(base * mul);
+    // baseDmg 가 있는데도 환생 배율보다 현저히 낮으면(구버전 클라/저장 레이스) 보정
+    else if (Number(p.baseDmg) > 0 && mul > 1 && base < Number(p.baseDmg) * 0.5) {
+      /* keep client bd */
+    }
+  } catch (_) {}
+  return Math.max(1, Math.floor(base));
+}
 function dmgTakenMult(p, now) {   // 죽음의 회피 중이면 받는 피해 0.1배
   const s = deathSt(p);
   return s && s.deathSkills && Number(s.deathSkills.evadeUntil) > now ? DEATH_EVADE_MULT : 1;
@@ -641,7 +764,7 @@ function deathGuideKill(p, m) {
 // 죽음의 창: 15개 고정, 창마다 다른 몬스터를 노리고 몬스터가 15마리 미만이면 남는 창을 한 마리씩 더 배정
 function deathSpearsAttack(p, ws, now) {
   now = now || Date.now();
-  const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  const base = deathSkillBase(p);
   // 창마다 자기 쿨다운 보유 (처음엔 서로 엇갈리게 시작)
   if (!Array.isArray(p._spearCd) || p._spearCd.length !== DEATH_SPEAR_COUNT) {
     p._spearCd = [];
@@ -675,7 +798,7 @@ function deathSpearsAttack(p, ws, now) {
 const DEATH_THROW_RANGE = 150, DEATH_THROW_SPEED = 90, DEATH_THROW_WIDTH = 7, DEATH_THROW_MULT = 10, DEATH_THROW_CD = 30000;
 const deathThrows = [];
 function deathThrowStart(p, ws, face, now) {
-  const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+  const base = deathSkillBase(p);
   if (base < 1) return false;
   const dx = Math.sin(face), dz = Math.cos(face);
   deathThrows.push({ p, ws, x0: p.x, z0: p.z, dx, dz, t0: now, prev: 0, base, hit: new Set() });
@@ -723,7 +846,7 @@ function tickDeath(now) {
     if (ds.spears) deathSpearsAttack(p, ws, now);
     // 영혼 수확의 결계: 반경 14m 장판 — 주기적으로 근처 몬스터에 기본 데미지 8%
     if (ds.harvest && doSpear) {
-      const base = (Number(p.baseDmg) > 0 ? Number(p.baseDmg) : Number(p.lastHit)) || 0;
+      const base = deathSkillBase(p);
       const one = Math.max(1, Math.floor(base * 0.08));
       if (base >= 1) {
         for (const m of monsters.values()) {
@@ -940,20 +1063,29 @@ function tickMonsters(dt, now) {
   for (const m of monsters.values()) {
     const d = MT[m.type]; if (!d) continue;
     if (m.dead) { m.rt -= dt; if (m.rt <= 0) respawnMonster(m); continue; }
-    // 하데스의 검 화염: 모든 몬스터/보스에게 면역 없이 최대 체력의 1%를 1초마다 적용
+    // 하데스의 창 화염: 타격 데미지의 50%를 1초마다, until 까지(기본 10초)
     if (m.fireDot && now >= m.fireDot.next) {
-      m.fireDot.next = now + 1000;
-      m.hp -= Math.max(1, Math.floor(m.mhp * 0.01)); m.ver++;
-      if (m.hp <= 0) {
-        const w = wsById.get(m.fireDot.source), p = w && w.player;
-        if (p) {
-          const oxp=p.x, ozp=p.z, oldShield=m.shield;
-          p.x=m.x; p.z=m.z; m.hp=1; m.shield=null;
-          try { applyPlayerHit(p,w,m.id,1,0,'fire'); } catch(e) { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; }
-          p.x=oxp; p.z=ozp; if (m.dead) m.fireDot=null; else m.shield=oldShield;
-        } else { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; m.cast=null; m.shield=null; m.fireDot=null; m.ver++; }
+      if (m.fireDot.until && now > m.fireDot.until) { m.fireDot = null; }
+      else {
+        m.fireDot.next = now + 1000;
+        const dps = Math.max(1, Math.floor(Number(m.fireDot.dps) || Math.floor(m.mhp * 0.01)));
+        m.hp -= dps; m.ver++;
+        // 기여도 누적 (처치 보상 판정)
+        try {
+          const sid = m.fireDot.source;
+          if (sid) m.dmg.set(sid, (m.dmg.get(sid) || 0) + dps);
+        } catch (_) {}
+        if (m.hp <= 0) {
+          const w = wsById.get(m.fireDot.source), p = w && w.player;
+          if (p) {
+            const oxp=p.x, ozp=p.z, oldShield=m.shield;
+            p.x=m.x; p.z=m.z; m.hp=1; m.shield=null;
+            try { applyPlayerHit(p,w,m.id,1,0,'fire'); } catch(e) { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; }
+            p.x=oxp; p.z=ozp; if (m.dead) m.fireDot=null; else m.shield=oldShield;
+          } else { m.hp=0; m.dead=true; m.rt=MT[m.type].rt; m.cast=null; m.shield=null; m.fireDot=null; m.ver++; }
+        }
+        if (m.dead) continue;
       }
-      if (m.dead) continue;
     }
     const ox = m.x, oz = m.z, ohp = m.hp, oface = m.face;
     m.cd -= dt; m.t += dt * 4;
@@ -1064,18 +1196,36 @@ function tickMonsters(dt, now) {
 }
 
 // 각 접속자에게 "자기 주변(AOI)에서 바뀐 몬스터"만 전송 (대역폭 절약)
+// · AOI 밖으로 나간 몬스터는 _seen 에서 제거 → 재진입 시 반드시 재전송
+// · 이동/주기적 강제 동기화로 여러 명 접속 시 몬스터가 안 보이는 현상 방지
+// · 패킷 분할 + 버퍼 임계로 상태 브로드캐스트에 mon 이 밀리지 않게 함
 function broadcastMonsters() {
+  const now = Date.now();
   for (const ws of wss.clients) {
     const p = ws.player;
-    if (!p || ws.readyState !== WebSocket.OPEN || !ws._seen || ws.bufferedAmount > 1e6) continue;
+    if (!p || ws.readyState !== WebSocket.OPEN || !ws._seen) continue;
+    // 상태 패킷이 밀려도 mon 은 우선 전송 (2MB 이상일 때만 스킵)
+    if (ws.bufferedAmount > 2e6) continue;
     const out = [];
+    const moved = !ws._aoiX || Math.hypot(p.x - ws._aoiX, p.z - ws._aoiZ) > 36;
+    const force = !ws._aoiT || (now - ws._aoiT > 2500) || moved;
+    if (force) { ws._aoiT = now; ws._aoiX = p.x; ws._aoiZ = p.z; }
     for (const m of monsters.values()) {
-      if (ws._seen.get(m.id) === m.ver) continue;
-      if (Math.hypot(m.x - p.x, m.z - p.z) > AOI_RADIUS) continue;
+      const dist = Math.hypot(m.x - p.x, m.z - p.z);
+      if (dist > AOI_RADIUS) {
+        if (ws._seen.has(m.id)) ws._seen.delete(m.id);
+        continue;
+      }
+      if (!force && ws._seen.get(m.id) === m.ver) continue;
       ws._seen.set(m.id, m.ver);
       out.push([m.id, q2(m.x), q2(m.z), Math.ceil(m.hp), q2(m.face), (m.dead ? 1 : 0) | (m.atk ? 2 : 0)]);
     }
-    if (out.length) { try { ws.send(JSON.stringify({ type: 'mon', m: out })); } catch {} }
+    if (out.length) {
+      // 한 패킷에 너무 많이 넣지 않아 다른 클라/메시지가 밀리지 않게 분할
+      for (let i = 0; i < out.length; i += 100) {
+        try { ws.send(JSON.stringify({ type: 'mon', m: out.slice(i, i + 100) })); } catch {}
+      }
+    }
   }
   for (const m of monsters.values()) m.atk = 0;
 }
@@ -1110,11 +1260,39 @@ function hashPassword(password,salt){return crypto.scryptSync(password,salt,64).
 function validUsername(s){return typeof s==='string'&&/^[A-Za-z0-9_가-힣.-]{3,24}$/.test(s);}
 function usernameKey(s){return s.toLocaleLowerCase('en-US');}
 function validPassword(s){return typeof s==='string'&&s.length>=8&&s.length<=128;}
+// 최고 관리자(isAdmin)는 지정된 계정만 허용. 그 외 isAdmin 은 전부 부관리자(isSubAdmin)로 강등
+const OWNER_KEYS = new Set([usernameKey('ADMIN')]);
+function isOwnerKey(key){ return OWNER_KEYS.has(usernameKey(String(key||''))); }
+function sanitizeAdminFlags(u, key){
+  if(!u || typeof u!=='object') return u;
+  const k = usernameKey(key || u.username || '');
+  if(isOwnerKey(k)){
+    u.isAdmin = true;
+    u.isSubAdmin = false; // 최고 관리자는 부관리자 플래그 불필요
+  } else {
+    // 버그/구버전 데이터로 isAdmin 이 켜져 있으면 부관리자로만 유지
+    if(u.isAdmin){
+      u.isAdmin = false;
+      u.isSubAdmin = true;
+    } else {
+      u.isAdmin = false;
+      u.isSubAdmin = !!u.isSubAdmin;
+    }
+  }
+  return u;
+}
+function sanitizeAllAdminFlags(){
+  for(const [k,u] of Object.entries(db.users||{})){
+    sanitizeAdminFlags(u, k);
+  }
+}
+
 function sign(payload){const body=Buffer.from(JSON.stringify(payload)).toString('base64url');const sig=crypto.createHmac('sha256',SESSION_SECRET).update(body).digest('base64url');return body+'.'+sig;}
 function unsign(token){if(typeof token!=='string')return null;const [body,sig]=token.split('.');if(!body||!sig)return null;const expected=crypto.createHmac('sha256',SESSION_SECRET).update(body).digest('base64url');if(!safeEqual(sig,expected))return null;try{const p=JSON.parse(Buffer.from(body,'base64url').toString());if(!p.u||!p.exp||p.exp<Date.now())return null;return p;}catch{return null;}}
 function isHttps(req){return String(req.headers['x-forwarded-proto']||'').split(',')[0].trim()==='https'||!!(req.socket&&req.socket.encrypted);}
 function cookie(req,res,token){res.setHeader('Set-Cookie',`rpg_session=${token}; Path=/; HttpOnly; ${isHttps(req)?'Secure; ':''}SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS/1000)}`);}
 function newToken(key){return sign({u:key,exp:Date.now()+SESSION_TTL_MS});}
+function startSession(key){return newToken(key);}   // 같은 계정으로 여러 기기 동시 접속 허용
 function clearCookie(req,res){res.setHeader('Set-Cookie',`rpg_session=; Path=/; HttpOnly; ${isHttps(req)?'Secure; ':''}SameSite=Lax; Max-Age=0`);}
 function userFromToken(t){const p=unsign(t);return p&&db.users[p.u]?p.u:null;}
 function userFromReq(req){
@@ -1137,18 +1315,20 @@ function seedAdmin(){
       salt,
       createdAt: Date.now(),
       isAdmin: true,
+      isSubAdmin: false,
       banned: false
     };
     db.states[key] = null;
     console.log('Admin account seeded: ADMIN');
-    return persist().catch(e => console.error('seed persist', e.message));
   } else {
     db.users[key].isAdmin = true;
     db.users[key].isSubAdmin = false;
     db.users[key].banned = !!db.users[key].banned;
   }
+  // 다른 계정의 잘못된 isAdmin 승격 전부 정리
+  sanitizeAllAdminFlags();
   if(!db.bans) db.bans = {};
-  return Promise.resolve();
+  return persist().catch(e => console.error('seedAdmin persist', e.message));
 }
 
 function ensurePlayer(key){
@@ -1205,7 +1385,7 @@ function ensurePlayer(key){
 }
 // ===== 저장 데이터 보강: 알려지지 않은 클라이언트 필드도 (크기 제한 안에서) MongoDB 에 보존 =====
 const SAFE_KEY = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
-const KNOWN_PLAYER_KEYS = new Set(['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg','pot','ow','oa','sw','items','qa','qd','questProgress','godUnlocked','hadesSword','godQuestAccepted','godQuestDone','job','msUnlocked','jstep','jm','jhp','we','ae','rebirth','rcoin','title','achievementIds','unlockedTitles','equippedTitle','deathSkills','deathLives','deathReborn','deathCutsceneDone','talents','talentPts','runes','runeEq','towerBest','towerDaily','towerDailyAt','rstat','rbMult','sbk','sks','look','bank','stats','guild','party']);
+const KNOWN_PLAYER_KEYS = new Set(['x','z','y','hp','mhp','lv','xp','nx','coin','at','face','inv','w','a','rg','pot','ow','oa','sw','items','qa','qd','questProgress','godUnlocked','hadesSword','hadesSwordEquipped','godQuestAccepted','godQuestDone','job','msUnlocked','jstep','jm','jhp','we','ae','rebirth','rcoin','title','achievementIds','unlockedTitles','equippedTitle','deathSkills','deathLives','deathReborn','deathCutsceneDone','talents','talentPts','runes','runeEq','towerBest','towerDaily','towerDailyAt','rstat','rbMult','sbk','sks','look','bank','stats','guild','party']);
 function cleanExtraVal(v, depth) {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'number') return Number.isFinite(v) ? Math.max(-1e12, Math.min(1e12, v)) : undefined;
@@ -1230,13 +1410,25 @@ function copyExtraPlayerFields(p, player) {
     size += s; player[k] = c; n++;
   }
 }
-// 서버가 권한을 가진 값(환생 횟수, 죽음의 신 상태)은 클라이언트의 오래된 저장본이 덮어쓰지 못하게 한다
+// 서버가 권한을 가진 값(환생·스탯·죽음의 신 상태)은 클라이언트의 오래된 저장본이 덮어쓰지 못하게 한다
 function keepServerAuth(prev, np) {
   if (!prev || !np) return;
   if ((prev.rebirth | 0) > (np.rebirth | 0)) np.rebirth = prev.rebirth | 0;
+  if ((prev.rcoin | 0) > (np.rcoin | 0)) np.rcoin = prev.rcoin | 0;
+  if ((prev.rstat | 0) > (np.rstat | 0)) np.rstat = prev.rstat | 0;
+  if (prev.rbMult && typeof prev.rbMult === 'object') {
+    if (!np.rbMult || typeof np.rbMult !== 'object') np.rbMult = {};
+    for (const k of ['atk', 'hp', 'exp', 'rcoin', 'rebirth', 'rstat']) {
+      if ((prev.rbMult[k] | 0) > (np.rbMult[k] | 0)) np.rbMult[k] = prev.rbMult[k] | 0;
+    }
+  }
   if (prev.deathSkills && typeof prev.deathSkills === 'object') np.deathSkills = Object.assign({}, prev.deathSkills);
   if (prev.deathLives != null) np.deathLives = prev.deathLives;
   if (prev.deathReborn) np.deathReborn = true;
+  if (prev.godUnlocked === true) np.godUnlocked = true;
+  if (prev.hadesSword === true) np.hadesSword = true;
+  if (prev.godQuestAccepted === true) np.godQuestAccepted = true;
+  if (prev.godQuestDone === true) np.godQuestDone = true;
   if (prev.deathCutsceneDone) np.deathCutsceneDone = true;
   if (!np.title && prev.title) np.title = prev.title;
   if ((np.rebirth | 0) >= DEATH_REBIRTH) np.job = 'deathgod';
@@ -1328,6 +1520,7 @@ function cleanState(input){
  return {version:1,player,camera,savedAt:Date.now()};
 }
 app.post('/api/register',authLimiter,(req,res)=>{
+ if(maintenanceOn())return res.status(503).json({error:maintMsg()});
  const {username,password}=req.body||{};
  if(!validUsername(username))return res.status(400).json({error:'아이디는 한글/영문/숫자/._- 조합으로 3~24자 입력하세요.'});
  if(!validPassword(password))return res.status(400).json({error:'비밀번호는 8~128자로 입력하세요.'});
@@ -1336,20 +1529,34 @@ app.post('/api/register',authLimiter,(req,res)=>{
  const salt=crypto.randomBytes(16).toString('hex');
  db.users[key]={username,passwordHash:hashPassword(password,salt),salt,createdAt:Date.now()};
  db.states[key]=null;persist();
- const token=newToken(key);cookie(req,res,token);
+ const token=startSession(key);cookie(req,res,token);
  res.status(201).json({user:username,state:null,token});
 });
-app.post('/api/login',authLimiter,(req,res)=>{
- const {username,password}=req.body||{};if(typeof username!=='string'||typeof password!=='string')return res.status(400).json({error:'아이디와 비밀번호를 입력하세요.'});
- const key=usernameKey(username),u=db.users[key];
- const salt=u?u.salt:'00000000000000000000000000000000';
- const actual=hashPassword(password,salt),expected=u?u.passwordHash:'0'.repeat(128);
- if(!u||!safeEqual(actual,expected))return res.status(401).json({error:'아이디 또는 비밀번호가 올바르지 않습니다.'});
- if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});
- const token=newToken(key);cookie(req,res,token);
- if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});
+app.post('/api/login',authLimiter,async(req,res)=>{
+ try{
+  const {username,password}=req.body||{};
+  if(typeof username!=='string'||typeof password!=='string')return res.status(400).json({error:'아이디와 비밀번호를 입력하세요.'});
+  const key=usernameKey(username.trim());
+  // 로그인 직전 MongoDB 에서 최신 salt/hash 로드 (비번 재설정 직후 반영)
+  let u = await reloadUserAuth(key);
+  if(!u) u = db.users[key];
+  const salt = (u && typeof u.salt==='string' && u.salt) ? u.salt : '00000000000000000000000000000000';
+  const expected = (u && typeof u.passwordHash==='string' && u.passwordHash) ? u.passwordHash : '0'.repeat(128);
+  const actual = hashPassword(password, salt);
+  if(!u || !safeEqual(actual, expected)){
+    return res.status(401).json({error:'아이디 또는 비밀번호가 올바르지 않습니다.'});
+  }
+  if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});
+  if(maintenanceOn()&&!isOwnerKey(key))return res.status(503).json({error:maintMsg()});
+  const token=startSession(key);cookie(req,res,token);
+  if(db.states[key]&&db.states[key].player)ensurePlayer(key);
+  sanitizeAdminFlags(u,key);res.json({death:deathInfo(key),user:u.username,state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});
+ }catch(e){
+  console.error('login error', e);
+  res.status(500).json({error:'로그인 처리 중 오류가 발생했습니다.'});
+ }
 });
-app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});const token=newToken(key);cookie(req,res,token);if(db.states[key]&&db.states[key].player)ensurePlayer(key);res.json({death:deathInfo(key),user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});});
+app.get('/api/me',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).json({error:'로그인이 필요합니다.'});const u=db.users[key];if(u.banned||(db.bans&&db.bans[key]))return res.status(403).json({error:'차단된 계정입니다.'});if(maintenanceOn()&&!isOwnerKey(key))return res.status(503).json({error:maintMsg()});const token=newToken(key);cookie(req,res,token);if(db.states[key]&&db.states[key].player)ensurePlayer(key);sanitizeAdminFlags(u,key);res.json({death:deathInfo(key),user:publicName(key),state:db.states[key]||null,isAdmin:!!u.isAdmin,isSubAdmin:!!u.isSubAdmin,token});});
 app.post('/api/save',requireUser,(req,res)=>{
   const state=cleanState(req.body&&req.body.state);
   if(!state)return res.status(400).json({error:'저장 데이터 형식이 올바르지 않습니다.'});
@@ -1396,7 +1603,29 @@ app.post('/api/save',requireUser,(req,res)=>{
   persistSoon();
   res.json({ok:true,savedAt:state.savedAt});
 });
-app.post('/api/save-beacon',(req,res)=>{const key=userFromReq(req);if(!key)return res.status(401).end();let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}const state=cleanState(body&&body.state);if(!state)return res.status(400).end();{const pv=db.states[key]&&db.states[key].player;if(pv){if(pv.bank)state.player.bank=pv.bank;if(typeof pv.coin==='number'&&typeof state.player.coin==='number'&&pv.coin>state.player.coin)state.player.coin=pv.coin;if((pv.rcoin|0)>(state.player.rcoin|0))state.player.rcoin=pv.rcoin|0;if((pv.rstat|0)>(state.player.rstat|0))state.player.rstat=pv.rstat|0;}}keepServerAuth(db.states[key]&&db.states[key].player,state.player);db.states[key]=state;persistSoon();res.status(204).end();});
+app.post('/api/save-beacon',(req,res)=>{
+  const key=userFromReq(req);if(!key)return res.status(401).end();
+  let body=req.body;if(typeof body==='string'){try{body=JSON.parse(body);}catch{return res.status(400).end();}}
+  const state=cleanState(body&&body.state);if(!state)return res.status(400).end();
+  const pv=db.states[key]&&db.states[key].player;
+  if(pv){
+    if(pv.bank) state.player.bank=pv.bank;
+    if(typeof pv.coin==='number'&&typeof state.player.coin==='number'&&pv.coin>state.player.coin) state.player.coin=pv.coin;
+    if((pv.rcoin|0)>(state.player.rcoin|0)) state.player.rcoin=pv.rcoin|0;
+    if((pv.rstat|0)>(state.player.rstat|0)) state.player.rstat=pv.rstat|0;
+    if(pv.rbMult&&typeof pv.rbMult==='object'){
+      if(!state.player.rbMult) state.player.rbMult={};
+      for(const k of ['atk','hp','exp','rcoin','rebirth','rstat']){
+        if((pv.rbMult[k]|0)>(state.player.rbMult[k]|0)) state.player.rbMult[k]=pv.rbMult[k]|0;
+      }
+    }
+    if((pv.rebirth|0)>(state.player.rebirth|0)) state.player.rebirth=pv.rebirth|0;
+  }
+  keepServerAuth(pv, state.player);
+  db.states[key]=state;
+  persistSoon();
+  res.status(204).end();
+});
 app.post('/api/logout',(req,res)=>{clearCookie(req,res);res.json({ok:true});});
 
 app.post('/api/buy', requireUser, (req, res) => {
@@ -1488,29 +1717,105 @@ function pushAdminStat(key, patch){
     }
   }catch(e){}
 }
+// 점검 모드: 최고 관리자만 접속 가능 (db.mapOverrides.maintenance 에 저장 → 재시작 후에도 유지)
+let restarting = false;
+const MAINT_MSG_RESTART = '서버 재시작 중입니다. 잠시 후 다시 접속해 주세요.';
+const MAINT_MSG_PRIVATE = '🔒 서버가 비공개 처리되었습니다. 최고 관리자가 해제할 때까지 접속할 수 없습니다.';
+function privateOn(){ return !!(db.mapOverrides && db.mapOverrides.maintenance); }
+function maintMsg(){ return privateOn() ? MAINT_MSG_PRIVATE : MAINT_MSG_RESTART; }
+function maintPacket(){ return JSON.stringify({type:'server_restart',msg:maintMsg(),private:privateOn()}); }
+function maintenanceOn(){ return restarting || !!(db.mapOverrides && db.mapOverrides.maintenance); }
+function kickNonOwners(msg){
+  for(const ws of wss.clients){
+    if(isOwnerKey(ws._userKey)) continue;
+    try{ if(ws.readyState===WebSocket.OPEN) ws.send(maintPacket()); }catch{}
+    setTimeout(()=>{ try{ws.close(1012,'maintenance');}catch{} },1200);
+  }
+}
 function requireAdmin(req,res,next){
   const key=userFromReq(req);
   if(!key) return res.status(401).json({error:'로그인이 필요합니다.'});
-  if(!db.users[key]||!db.users[key].isAdmin) return res.status(403).json({error:'관리자 권한이 없습니다.'});
-  req.userKey=key; next();
+  const u=db.users[key];
+  if(!u) return res.status(403).json({error:'관리자 권한이 없습니다.'});
+  sanitizeAdminFlags(u, key);
+  // 최고 관리자: OWNER 계정 + isAdmin 만
+  if(!u.isAdmin || !isOwnerKey(key)) return res.status(403).json({error:'최고 관리자 권한이 없습니다.'});
+  req.userKey=key; req.isOwner=true; next();
 }
 function requireStaff(req,res,next){
   const key=userFromReq(req);
   if(!key) return res.status(401).json({error:'로그인이 필요합니다.'});
   const u=db.users[key];
-  if(!u||(!u.isAdmin&&!u.isSubAdmin)) return res.status(403).json({error:'관리자 권한이 없습니다.'});
-  req.userKey=key; req.isOwner=!!u.isAdmin; next();
+  if(!u) return res.status(403).json({error:'관리자 권한이 없습니다.'});
+  sanitizeAdminFlags(u, key);
+  if(!u.isAdmin && !u.isSubAdmin) return res.status(403).json({error:'관리자 권한이 없습니다.'});
+  req.userKey=key; req.isOwner=!!(u.isAdmin && isOwnerKey(key)); next();
 }
 const SUBADMIN_MAX_LV = 1000, SUBADMIN_MAX_COIN = 100000000;
+app.post('/api/admin/restart', requireAdmin, async (req,res)=>{
+  if(restarting) return res.status(409).json({error:'이미 재시작 중입니다.'});
+  const delay=Math.max(0,Math.min(300,Math.floor(Number(req.body&&req.body.delaySec)||10)));
+  const ownerOnly=!!(req.body&&req.body.ownerOnly);   // 재시작 후에도 최고 관리자만 접속(점검 모드 유지)
+  restarting=true;
+  if(!db.mapOverrides) db.mapOverrides={version:1,objects:[],equipment:{}};
+  db.mapOverrides.maintenance=ownerOnly;
+  res.json({ok:true,delaySec:delay,ownerOnly});
+  try{ broadcastAll({type:'announce',text:'⚠ '+(delay>0?delay+'초 뒤 ':'')+'서버가 재시작됩니다. 잠시 후 다시 접속해 주세요.'}); }catch{}
+  setTimeout(async()=>{
+    try{ kickNonOwners(); }catch{}
+    try{ await persist(); }catch(e){ console.error('restart persist',e.message); }
+    setTimeout(()=>{
+      try{ for(const ws of wss.clients){ try{ws.close(1012,'restart');}catch{} } }catch{}
+      disconnectFromMongoDB().finally(()=>process.exit(0));   // Render 등이 자동으로 다시 기동
+    },2000);
+  },delay*1000);
+});
+app.post('/api/admin/maintenance', requireAdmin, async (req,res)=>{
+  const on=!!(req.body&&req.body.on);
+  if(!db.mapOverrides) db.mapOverrides={version:1,objects:[],equipment:{}};
+  db.mapOverrides.maintenance=on;
+  try{ await persist(); }catch{}
+  if(on) kickNonOwners();
+  res.json({ok:true,maintenance:on});
+});
+app.get('/api/admin/maintenance', requireAdmin, (req,res)=>res.json({maintenance:maintenanceOn(),restarting}));
 app.post('/api/admin/appoint', requireAdmin, (req,res)=>{
-  const {username, on=true} = req.body||{};
-  if(typeof username!=='string') return res.status(400).json({error:'아이디가 필요합니다.'});
-  const key=usernameKey(username); const u=db.users[key];
+  const {username, on} = req.body||{};
+  if(typeof username!=='string'||!username.trim()) return res.status(400).json({error:'아이디가 필요합니다.'});
+  const key=usernameKey(username.trim());
+  const u=db.users[key];
   if(!u) return res.status(404).json({error:'사용자를 찾을 수 없습니다.'});
-  if(u.isAdmin) return res.status(400).json({error:'이미 최고 관리자입니다.'});
-  u.isSubAdmin=!!on;
-  try{persist(); res.json({ok:true, username:u.username, isSubAdmin:!!u.isSubAdmin});}
-  catch(e){res.status(500).json({error:'저장 실패'});}
+  if(isOwnerKey(key) || u.isAdmin) return res.status(400).json({error:'최고 관리자는 임명/해임 대상이 아닙니다.'});
+  // 부관리자(운영진)만 부여 — isAdmin 은 절대 부여하지 않음
+  u.isAdmin = false;
+  u.isSubAdmin = !!on;
+  sanitizeAdminFlags(u, key);
+  try{persist(); res.json({ok:true, username:u.username, isAdmin:false, isSubAdmin:!!u.isSubAdmin});}
+  catch(e){res.status(500).json({error:e.message});}
+});
+// 최고 관리자만: 비밀번호 재설정 (원문 비밀번호는 scrypt 해시만 저장되어 조회 불가 → 재설정으로 대응)
+app.post('/api/admin/reset-password', requireAdmin, async (req,res)=>{
+  try{
+    const {username, password} = req.body||{};
+    if(typeof username!=='string' || !username.trim()) return res.status(400).json({error:'아이디가 필요합니다.'});
+    if(typeof password!=='string'||!validPassword(password)) return res.status(400).json({error:'비밀번호는 8~128자로 입력하세요.'});
+    const key=usernameKey(username.trim());
+    // Mongo 최신 유저 정보 확보
+    let u = await reloadUserAuth(key);
+    if(!u) u = db.users[key];
+    if(!u) return res.status(404).json({error:'사용자를 찾을 수 없습니다: '+username});
+    if(u.isAdmin && key!==req.userKey) return res.status(400).json({error:'다른 최고 관리자의 비밀번호는 변경할 수 없습니다.'});
+    await setUserPassword(key, password);
+    // 저장 직후 다시 읽어 검증
+    const check = await reloadUserAuth(key);
+    const ok = check && safeEqual(hashPassword(password, check.salt), check.passwordHash);
+    if(!ok) return res.status(500).json({error:'비밀번호가 MongoDB에 반영되지 않았습니다. 잠시 후 다시 시도하세요.'});
+    console.log('[admin] password reset OK for', check.username, 'by', req.userKey);
+    res.json({ok:true, username:check.username, verified:true});
+  }catch(e){
+    console.error('[admin] reset-password', e);
+    res.status(500).json({error:'저장 실패: '+(e&&e.message?e.message:'unknown')});
+  }
 });
 app.get('/api/admin/users', requireStaff, (req,res)=>{
   const list=[];
@@ -1768,7 +2073,7 @@ app.post('/api/admin/map-overrides', requireAdmin, async (req, res) => {
 // ===================================================================================
 //  통계 / 파티 / 길드 / 리더보드  (모두 서버 권한 — 클라이언트는 요청만 보냄)
 // ===================================================================================
-const PARTY_MAX = 4, PARTY_SHARE_RANGE = 160;
+const PARTY_MAX = 5, PARTY_SHARE_RANGE = 160;
 const parties = new Map(), invites = new Map();
 let partySeq = 0;
 const jerr = (res, text, code) => res.status(code || 400).json({ error: text });
@@ -1938,11 +2243,11 @@ app.post('/api/guild/leave', requireUser, (req, res) => {
   removeMember(g, req.userKey, '길드를 떠났습니다.'); res.json({ ok: true });
 });
 app.post('/api/guild/kick', requireUser, (req, res) => {
-  const g = myGuildMng(req, res, false); if (!g) return;
+  const g = myGuildMng(req, res, true); if (!g) return;   // 길드장 전용
   const tk = targetKey(req), t = g.members[tk]; if (!t) return jerr(res, '길드원이 아니에요.');
   if (tk === req.userKey) return jerr(res, '자기 자신은 추방할 수 없어요.');
   const myRole = g.members[req.userKey].role;
-  if (t.role === 'leader' || (t.role === 'officer' && myRole !== 'leader')) return jerr(res, '권한이 부족해요.', 403);
+  if (t.role === 'leader' || myRole !== 'leader') return jerr(res, '길드장만 추방할 수 있어요.', 403);
   removeMember(g, tk, '길드에서 추방되었습니다.'); res.json({ ok: true });
 });
 app.post('/api/guild/role', requireUser, (req, res) => {
@@ -2175,8 +2480,8 @@ app.post('/api/rebirth', requireUser, (req, res) => {
     const step = (p.rebirth|0) - rbGain + 1 + i; // 각 단계 환생 번호
     rcoinBase += 5 * Math.max(1, step);
   }
-  const rcoinGain = Math.floor(rcoinBase * Math.pow(2, (p.rbMult&&p.rbMult.rcoin)|0));
-  const rstatGain = Math.floor(rbGain * Math.pow(2, (p.rbMult&&p.rbMult.rstat)|0));
+  const rcoinGain = Math.floor(rcoinBase * rbMulLv((p.rbMult&&p.rbMult.rcoin)|0));
+  const rstatGain = Math.floor(rbGain * rbMulLv((p.rbMult&&p.rbMult.rstat)|0));
   p.rcoin = (p.rcoin|0) + rcoinGain;
   p.rstat = (p.rstat|0) + rstatGain;
   p.title = REBIRTH_TITLES[Math.min(REBIRTH_TITLES.length-1, p.rebirth)] || '환생자';
@@ -2198,9 +2503,19 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   if (!p.ow.includes(p.w|0)) { p.w = 0; p.we = 0; }
   if (!p.oa.includes(p.a|0)) { p.a = 0; p.ae = 0; }
   p.pot = [2, 0, 0, 0];
-  if (p.job==='magesword') p.msUnlocked = true; // 마검사는 환생 후에도 재전직 가능
-  p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1; // 직업 초기화
+  // 마검사: 환생해도 직업 유지 (초기화하지 않음)
+  const keepMagesword = (p.job === 'magesword') || !!p.msUnlocked;
+  if (keepMagesword) p.msUnlocked = true;
+  const wasDeath = (p.job === 'deathgod') || (prevRb >= 500);
+  if (keepMagesword) {
+    p.job = 'magesword';
+    p.jstep = 0.34; p.jm = 1.3; p.jhp = 1.6;
+  } else {
+    p.job = ''; p.jstep = 0; p.jm = 1; p.jhp = 1;
+  }
+  // 죽음의 신(환생 500+)은 최우선으로 유지
   if(p.rebirth >= 500){ p.job='deathgod'; if(prevRb < 500){ p.deathLives=2; p.deathReborn=false; p.deathSkills={guide:false,scythe:false,evadeUntil:0,spears:false,soul:false,harvest:false,execution:false,executionUntil:0,evadeCd:0}; } p.title='죽음의 신'; }
+  else if (wasDeath && p.job !== 'magesword') { /* 500 미만으로 내려간 경우만 해제 */ }
   // 환생해도 누적된 최대 체력/환생 스탯 보너스는 유지
   p.mhp = Math.max(100, Math.floor(Number(p.mhp)||100));
   p.hp = p.mhp;
@@ -2210,7 +2525,7 @@ app.post('/api/rebirth', requireUser, (req, res) => {
   pushAdminStat(req.userKey, { lv:p.lv, xp:p.xp, nx:p.nx, hp:p.hp, mhp:p.mhp, coin:p.coin });
   const deathAwakened = awakenDeathGod(req.userKey, p);   // 500회 달성 시 컷씬 + 전직 (최초 1회)
   res.json({
-    ok:true, rebirth:p.rebirth, rbGain, job:p.job, deathAwakened, cutscene:deathAwakened, deathSkills:p.deathSkills, deathLives:p.deathLives, death:deathInfo(req.userKey), rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
+    ok:true, rebirth:p.rebirth, rbGain, job:p.job, msUnlocked:!!p.msUnlocked, deathAwakened, cutscene:deathAwakened, deathSkills:p.deathSkills, deathLives:p.deathLives, death:deathInfo(req.userKey), rcoin:p.rcoin, rstat:p.rstat, rbMult:p.rbMult, title:p.title,
     rcoinGain, rstatGain,
     lv:p.lv, xp:p.xp, nx:p.nx, talentPts:p.talentPts,
     coin:p.coin, w:p.w, a:p.a, ow:p.ow, oa:p.oa, sw:p.sw, we:p.we, ae:p.ae, pot:p.pot, mhp:p.mhp, hp:p.hp
@@ -2218,14 +2533,15 @@ app.post('/api/rebirth', requireUser, (req, res) => {
 });
 
 // ===== 환생 스탯 업그레이드 =====
-// 배율 = 2^level, 비용 = base * 2^level (업글할 때마다 2배)
+// 효과 배율 = level+1 (0→×1, 1→×2, 2→×3 …), 비용 = base * 2^level
+function rbMulLv(lv){ return Math.max(1, (lv|0) + 1); }
 const RSTAT_DEFS = {
-  atk:     { name:'공격력 2배', base:1 },
-  hp:      { name:'체력 2배', base:1 },
-  exp:     { name:'경험치 2배', base:1 },
-  rcoin:   { name:'환생 코인 2배', base:4 },
-  rebirth: { name:'환생 횟수 효과 2배', base:4 },
-  rstat:   { name:'환생 스탯 2배', base:6 }
+  atk:     { name:'공격력', base:1 },
+  hp:      { name:'체력', base:1 },
+  exp:     { name:'경험치', base:1 },
+  rcoin:   { name:'환생 코인', base:4 },
+  rebirth: { name:'환생 효과', base:4 },
+  rstat:   { name:'환생 스탯', base:6 }
 };
 function rstatCost(id, level){
   const d = RSTAT_DEFS[id]; if(!d) return null;
@@ -2236,7 +2552,7 @@ app.get('/api/rebirth/stat/info', requireUser, (req, res) => {
   const info = {};
   for(const [id,d] of Object.entries(RSTAT_DEFS)){
     const lv = (p.rbMult&&p.rbMult[id])|0;
-    info[id] = { name:d.name, level:lv, mult:Math.pow(2,lv), cost:rstatCost(id,lv), nextMult:Math.pow(2,lv+1) };
+    info[id] = { name:d.name, level:lv, mult:rbMulLv(lv), cost:rstatCost(id,lv), nextMult:rbMulLv(lv+1) };
   }
   res.json({ ok:true, rstat:p.rstat|0, rbMult:p.rbMult||{}, info });
 });
@@ -2254,7 +2570,7 @@ app.post('/api/rebirth/stat', requireUser, (req, res) => {
   db.states[req.userKey].savedAt = Date.now();
   try { persist(); } catch(e) {}
   res.json({
-    ok:true, id, level:p.rbMult[id], mult:Math.pow(2,p.rbMult[id]),
+    ok:true, id, level:p.rbMult[id], mult:rbMulLv(p.rbMult[id]),
     rstat:p.rstat, rbMult:p.rbMult,
     nextCost: rstatCost(id, p.rbMult[id])
   });
@@ -2313,92 +2629,7 @@ app.post('/api/rune/equip', requireUser, (req, res) => {
 
 // 보스 처치 시 룬 드랍 (applyPlayerHit 보상 루프에서 호출)
 
-// ===== 플레이어 거래 =====
-const trades = new Map(); // key: pair id sorted "idA|idB" -> {a,b,offerA,offerB,readyA,readyB,t}
-function tradeKey(a,b){ return a<b ? a+'|'+b : b+'|'+a; }
-function cleanOffer(o){
-  if(!o||typeof o!=='object') return {coin:0, items:{}, w:[], a:[], runes:[]};
-  const coin = Math.max(0, Math.min(1e12, Math.floor(Number(o.coin)||0)));
-  const items = {};
-  if(o.items&&typeof o.items==='object'){
-    for(const [k,v] of Object.entries(o.items)){
-      if(typeof k!=='string'||k.length>24) continue;
-      const n=Math.floor(Number(v)||0);
-      if(n>0&&n<=9999) items[k]=n;
-    }
-  }
-  const w = Array.isArray(o.w)?o.w.filter(x=>Number.isInteger(x)&&x>0&&x<80).slice(0,10):[];
-  const a = Array.isArray(o.a)?o.a.filter(x=>Number.isInteger(x)&&x>0&&x<80).slice(0,10):[];
-  const runes = Array.isArray(o.runes)?o.runes.filter(x=>typeof x==='string'&&/^R[a-f0-9]{8}$/.test(x)).slice(0,10):[];
-  return {coin, items, w, a, runes};
-}
-function hasOffer(p, offer){
-  if((p.coin|0) < (offer.coin|0)) return '코인이 부족합니다.';
-  for(const [k,n] of Object.entries(offer.items||{})){
-    if(((p.items||{})[k]|0) < n) return '재료가 부족합니다: '+k;
-  }
-  const ow = Array.isArray(p.ow)?p.ow:[];
-  for(const wi of offer.w||[]){
-    if(wi=== (p.w|0)) return '장착 중인 무기는 거래할 수 없습니다.';
-    if(!ow.includes(wi)) return '보유하지 않은 무기입니다.';
-  }
-  const oa = Array.isArray(p.oa)?p.oa:[];
-  for(const ai of offer.a||[]){
-    if(ai=== (p.a|0)) return '장착 중인 방어구는 거래할 수 없습니다.';
-    if(!oa.includes(ai)) return '보유하지 않은 방어구입니다.';
-  }
-  const runes = Array.isArray(p.runes)?p.runes:[];
-  for(const rid of offer.runes||[]){
-    if(!runes.some(r=>r&&r.id===rid)) return '보유하지 않은 룬입니다.';
-    // 장착 중인 룬 제외
-    const eq = p.runeEq||{};
-    if(eq.w===rid||eq.a===rid||eq.u===rid) return '장착 중인 룬은 거래할 수 없습니다.';
-  }
-  return null;
-}
-function applyOffer(fromP, toP, offer){
-  // remove from fromP, add to toP
-  fromP.coin = (fromP.coin|0) - (offer.coin|0);
-  toP.coin = (toP.coin|0) + (offer.coin|0);
-  if(!fromP.items) fromP.items={};
-  if(!toP.items) toP.items={};
-  for(const [k,n] of Object.entries(offer.items||{})){
-    fromP.items[k] = (fromP.items[k]|0) - n;
-    if(fromP.items[k]<=0) delete fromP.items[k];
-    toP.items[k] = (toP.items[k]|0) + n;
-  }
-  if(!Array.isArray(fromP.ow)) fromP.ow=[0];
-  if(!Array.isArray(toP.ow)) toP.ow=[0];
-  for(const wi of offer.w||[]){
-    fromP.ow = fromP.ow.filter(x=>x!==wi);
-    if(!toP.ow.includes(wi)) toP.ow.push(wi);
-  }
-  if(!Array.isArray(fromP.oa)) fromP.oa=[0];
-  if(!Array.isArray(toP.oa)) toP.oa=[0];
-  for(const ai of offer.a||[]){
-    fromP.oa = fromP.oa.filter(x=>x!==ai);
-    if(!toP.oa.includes(ai)) toP.oa.push(ai);
-  }
-  if(!Array.isArray(fromP.runes)) fromP.runes=[];
-  if(!Array.isArray(toP.runes)) toP.runes=[];
-  for(const rid of offer.runes||[]){
-    const idx = fromP.runes.findIndex(r=>r&&r.id===rid);
-    if(idx>=0){
-      const [rn] = fromP.runes.splice(idx,1);
-      if(toP.runes.length<40) toP.runes.push(rn);
-    }
-  }
-}
-function tradeSnapshot(p){
-  return {
-    coin: p.coin|0,
-    items: Object.assign({}, p.items||{}),
-    ow: (p.ow||[]).slice(),
-    oa: (p.oa||[]).slice(),
-    runes: (p.runes||[]).map(r=>({id:r.id,name:r.name,opt:r.opt,val:r.val,slot:r.slot,tier:r.tier})),
-    w: p.w|0, a: p.a|0
-  };
-}
+// ===== 플레이어 거래: trade.js 로 분리됨 (아래 WebSocket 섹션에서 require) =====
 
 function tryDropRune(ws, m, d) {
   if (!d.boss || !ws || !ws._userKey) return;
@@ -2643,8 +2874,29 @@ const wss=new WebSocketServer({noServer:true,maxPayload:8192,perMessageDeflate:f
 let server = null;
 const players=new Map(), socketsByIp=new Map(), wsById=new Map();
 
+// ===== 거래 모듈 (trade.js) =====
+const trade = require('./trade')({
+  players, wsById,
+  getDb: () => db,
+  ensurePlayer, sendTo, msgTo, persistSoon,
+  inSafe: inSafeAny   // 시작마을/천사마을/성운 착륙장/우주선 = 안전지대
+});
+
 function allowedOrigin(origin,req){if(!origin)return false;if(ALLOWED_ORIGINS.has(origin))return true;try{const u=new URL(origin),secure=String(req.headers['x-forwarded-proto']||'').split(',')[0].trim()==='https';return u.host===req.headers.host&&u.protocol===(secure?'https:':'http:');}catch{return false;}}
 function broadcast(data,except){const raw=JSON.stringify(data);for(const c of wss.clients)if(c!==except&&c.readyState===WebSocket.OPEN)try{c.send(raw);}catch{}}
+// 플레이어 상태: 근처(STATE_NEAR)는 매번, 먼 사람은 1초에 한 번만. 전송 버퍼가 밀린 소켓은 건너뜀
+// (전원에게 매번 보내면 N×N 폭증 → 몬스터 갱신(mon)이 밀려 몬스터가 안 보이거나 체력이 안 닳는 문제 발생)
+const STATE_NEAR = 320;
+function broadcastState(p,except,now){
+  const raw=JSON.stringify({type:'state',player:p});
+  for(const c of wss.clients){
+    if(c===except||c.readyState!==WebSocket.OPEN||!c.player) continue;
+    if(c.bufferedAmount>131072) continue;
+    const far=Math.hypot(c.player.x-p.x,c.player.z-p.z)>STATE_NEAR;
+    if(far){ if(now-(c._farT&&c._farT[p.id]||0)<1000) continue; (c._farT=c._farT||{})[p.id]=now; }
+    try{c.send(raw);}catch{}
+  }
+}
 function broadcastAll(data){const raw=JSON.stringify(data);for(const c of wss.clients)if(c.readyState===WebSocket.OPEN)try{c.send(raw);}catch{}}
 
 function userFromWsReq(req){
@@ -2668,6 +2920,7 @@ function attachUpgrade(server){server.on('upgrade',(req,socket,head)=>{
     if(auth && db.users[auth.key] && (db.users[auth.key].banned || (db.bans&&db.bans[auth.key]))){
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return;
     }
+    if(maintenanceOn()&&!(auth&&isOwnerKey(auth.key))){ try{ws.send(maintPacket());}catch{} try{ws.close(1013,'maintenance');}catch{} const n=(socketsByIp.get(ip)||1)-1; if(n>0)socketsByIp.set(ip,n); else socketsByIp.delete(ip); return; }
     ws._userKey=auth?auth.key:null;
     ws._username=auth?auth.username:null;
     wss.emit('connection',ws,req);
@@ -2690,22 +2943,15 @@ wss.on('connection',ws=>{
   Object.defineProperty(p,'lastHit',{value:0,writable:true,enumerable:false});
   Object.defineProperty(p,'wasAlive',{value:false,writable:true,enumerable:false});
   Object.defineProperty(p,'reviveUntil',{value:0,writable:true,enumerable:false});
-  // 같은 계정의 기존 접속은 종료 (내 캐릭터가 복제되어 보이는 현상 방지)
-  if(ws._userKey){
-    for(const o of wss.clients){
-      if(o!==ws&&o._userKey===ws._userKey){
-        try{o.send(JSON.stringify({type:'dup'}));}catch{}
-        try{o.close(4001,'duplicate login');}catch{}
-        if(o.player){players.delete(o.player.id);wsById.delete(o.player.id);broadcast({type:'leave',id:o.player.id});}
-      }
-    }
-  }
+  // 같은 계정으로 여러 기기 동시 접속 허용 (각 접속은 별도 캐릭터로 표시)
   players.set(id,p); ws.player=p; wsById.set(id,ws);
   ws._tokens=40; ws._tokT=Date.now();
 
   // 접속 시: 다른 플레이어 + 서버 몬스터 전체 상태 전송
+  // _seen 은 비워 둔다. welcome 스냅샷이 전체 상태를 주고, 이후 AOI 내 변경/재진입만 델타로 보낸다.
+  // (예전처럼 전부 ver 로 채우면 AOI 밖→안 진입 시 변경 없는 몬스터가 영구히 안 올 수 있음)
   ws._seen=new Map();
-  for(const m of monsters.values()) ws._seen.set(m.id,m.ver);
+  ws._aoiT=0; ws._aoiX=null; ws._aoiZ=null;
   ws.send(JSON.stringify({
     type:'welcome',
     id,
@@ -2742,6 +2988,7 @@ wss.on('connection',ws=>{
       if(Number.isFinite(m.lv)) p.lv=Math.max(1,Math.min(1e6,Math.floor(m.lv)));
       if(typeof m.job==='string'&&/^[a-z_]{0,24}$/.test(m.job)) p.job=m.job;
       if(typeof m.hadesSword==='boolean') p.hadesSword=m.hadesSword;
+      if(typeof m.hadesSwordEquipped==='boolean') p.hadesSwordEquipped=m.hadesSwordEquipped;
       if(typeof m.godUnlocked==='boolean') p.godUnlocked=m.godUnlocked;
       if(Number.isFinite(m.bd)&&m.bd>0) p.baseDmg=Math.min(1e9,m.bd);   // 죽음의 창 데미지 기준(내 1회 공격 데미지)
       const dsx=deathSt(p);
@@ -2754,7 +3001,7 @@ wss.on('connection',ws=>{
       if(Number.isFinite(m.shirt)) p.shirt = Math.floor(m.shirt) & 0xffffff;
       if(Number.isFinite(m.skin)) p.skin = Math.floor(m.skin) & 0xffffff;
       if(m.look && typeof m.look==='object') p.look = m.look;
-      broadcast({type:'state',player:p},ws);
+      broadcastState(p,ws,now);
       // atk 플래그는 1회성
       p.atk = 0;
       return;
@@ -2854,106 +3101,15 @@ wss.on('connection',ws=>{
       return;
     }
     
-    if(m.type==='trade_req'){
-      if(typeof m.to!=='string') return;
-      if(now-(ws._trT||0)<1500) return; ws._trT=now;
-      const tp=players.get(m.to);
-      if(!tp||tp.id===p.id) return msgTo(p.id,'거래할 수 없는 대상이에요.');
-      if(Math.hypot((p.x||0)-(tp.x||0),(p.z||0)-(tp.z||0))>18) return msgTo(p.id,'상대가 너무 멀어요. (18m 이내)');
-      const k=tradeKey(p.id,tp.id);
-      if(trades.has(k)) return msgTo(p.id,'이미 진행 중인 거래가 있어요.');
-      // cancel any other pending invites for this player
-      trades.set(k,{a:p.id,b:tp.id,offerA:cleanOffer(null),offerB:cleanOffer(null),readyA:0,readyB:0,t:now,stage:'open'});
-      sendTo(tp.id,{type:'trade_invited',from:{id:p.id,name:p.name,lv:p.lv||1},ttl:45});
-      msgTo(p.id,tp.name+' 님에게 거래를 요청했어요.');
-      return;
-    }
-    if(m.type==='trade_reply'){
-      const fromId=typeof m.from==='string'?m.from:'';
-      const k=tradeKey(p.id,fromId);
-      const tr=trades.get(k);
-      if(!tr||(tr.a!==fromId&&tr.b!==fromId)) return;
-      if(!m.ok){
-        trades.delete(k);
-        sendTo(fromId,{type:'trade_end',reason:'거절됨'});
-        msgTo(fromId,p.name+' 님이 거래를 거절했어요.');
-        return;
-      }
-      tr.stage='active'; tr.t=now;
-      // send open panels to both
-      const pa=players.get(tr.a), pb=players.get(tr.b);
-      if(!pa||!pb){ trades.delete(k); return; }
-      sendTo(tr.a,{type:'trade_open',with:{id:pb.id,name:pb.name,lv:pb.lv||1},you:'A'});
-      sendTo(tr.b,{type:'trade_open',with:{id:pa.id,name:pa.name,lv:pa.lv||1},you:'B'});
-      return;
-    }
-    if(m.type==='trade_offer'){
-      // update my side offer
-      let tr=null, side=null;
-      for(const [k,v] of trades){ if(v.a===p.id){tr=v;side='A';break} if(v.b===p.id){tr=v;side='B';break} }
-      if(!tr||tr.stage!=='active') return;
-      if(now-tr.t>180000){ trades.delete(tradeKey(tr.a,tr.b)); sendTo(tr.a,{type:'trade_end',reason:'시간 초과'}); sendTo(tr.b,{type:'trade_end',reason:'시간 초과'}); return; }
-      const offer=cleanOffer(m.offer);
-      const pl=ensurePlayer(ws._userKey);
-      const err=hasOffer(pl,offer);
-      if(err){ try{ws.send(JSON.stringify({type:'trade_err',error:err}));}catch{} return; }
-      if(side==='A'){ tr.offerA=offer; tr.readyA=0; tr.readyB=0; }
-      else { tr.offerB=offer; tr.readyA=0; tr.readyB=0; }
-      sendTo(tr.a,{type:'trade_update',offerA:tr.offerA,offerB:tr.offerB,readyA:tr.readyA,readyB:tr.readyB});
-      sendTo(tr.b,{type:'trade_update',offerA:tr.offerA,offerB:tr.offerB,readyA:tr.readyA,readyB:tr.readyB});
-      return;
-    }
-    if(m.type==='trade_ready'){
-      let tr=null, side=null;
-      for(const [k,v] of trades){ if(v.a===p.id){tr=v;side='A';break} if(v.b===p.id){tr=v;side='B';break} }
-      if(!tr||tr.stage!=='active') return;
-      if(side==='A') tr.readyA = m.ok?1:0; else tr.readyB = m.ok?1:0;
-      sendTo(tr.a,{type:'trade_update',offerA:tr.offerA,offerB:tr.offerB,readyA:tr.readyA,readyB:tr.readyB});
-      sendTo(tr.b,{type:'trade_update',offerA:tr.offerA,offerB:tr.offerB,readyA:tr.readyA,readyB:tr.readyB});
-      if(tr.readyA&&tr.readyB){
-        // execute trade
-        const keyA = (wsById.get(tr.a)||{})._userKey;
-        const keyB = (wsById.get(tr.b)||{})._userKey;
-        // find user keys from players
-        const pa=players.get(tr.a), pb=players.get(tr.b);
-        const ua=pa&&pa._userKey, ub=pb&&pb._userKey;
-        // store userKey on player at login - check
-        const wsa=wsById.get(tr.a), wsb=wsById.get(tr.b);
-        const userA=wsa&&wsa._userKey, userB=wsb&&wsb._userKey;
-        if(!userA||!userB){ trades.delete(tradeKey(tr.a,tr.b)); sendTo(tr.a,{type:'trade_end',reason:'오류'}); sendTo(tr.b,{type:'trade_end',reason:'오류'}); return; }
-        const A=ensurePlayer(userA), B=ensurePlayer(userB);
-        const e1=hasOffer(A,tr.offerA), e2=hasOffer(B,tr.offerB);
-        if(e1||e2){
-          sendTo(tr.a,{type:'trade_err',error:e1||e2});
-          sendTo(tr.b,{type:'trade_err',error:e1||e2});
-          tr.readyA=0; tr.readyB=0;
-          return;
-        }
-        applyOffer(A,B,tr.offerA);
-        applyOffer(B,A,tr.offerB);
-        db.states[userA].savedAt=Date.now();
-        db.states[userB].savedAt=Date.now();
-        persistSoon();
-        const snapA=tradeSnapshot(A), snapB=tradeSnapshot(B);
-        sendTo(tr.a,{type:'trade_done',you:snapA});
-        sendTo(tr.b,{type:'trade_done',you:snapB});
-        trades.delete(tradeKey(tr.a,tr.b));
-        msgTo(tr.a,'거래가 완료되었습니다!');
-        msgTo(tr.b,'거래가 완료되었습니다!');
+    if(m.type.startsWith('trade_') && trade.handle(m,ws,p,now)) return;   // 거래 → trade.js
+    if (m.type === 'emote') {
+      const e = String(m.emote||'').slice(0,32);
+      if (e === 'take_the_l') {
+        sendNear(p.x, p.z, { type:'emote', emote:'take_the_l', id:p.id, name:p.name||'' }, 80);
       }
       return;
     }
-    if(m.type==='trade_cancel'){
-      let tr=null;
-      for(const [k,v] of trades){ if(v.a===p.id||v.b===p.id){tr=v;break} }
-      if(!tr) return;
-      const k=tradeKey(tr.a,tr.b);
-      trades.delete(k);
-      sendTo(tr.a,{type:'trade_end',reason:'취소됨'});
-      sendTo(tr.b,{type:'trade_end',reason:'취소됨'});
-      return;
-    }
-if(m.type==='chat'){
+    if(m.type==='chat'){
       if(now-(ws._chatT||0)<600) return; ws._chatT=now;
       const text=String(m.text==null?'':m.text).replace(/[\u0000-\u001f\u007f<>]/g,' ').trim().slice(0,120);
       if(!text) return;
@@ -2999,7 +3155,9 @@ if(m.type==='chat'){
 
   ws.on('close',()=>{
     persistSoon();
+    try{ trade.onClose(p); }catch{}
     try{ partyLeave(p,''); invites.delete(p.id); for(const [to,iv] of invites) if(iv.from===p.id) invites.delete(to); }catch{}
+    try{clearInterval(ws._heartbeat);}catch{}
     players.delete(p.id); wsById.delete(p.id);
     broadcast({type:'leave',id:p.id});
     const n=(socketsByIp.get(ws._ip)||1)-1;
